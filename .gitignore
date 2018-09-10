@@ -1,3 +1,13 @@
 threads/bochsout.txt
 threads/bochsrc.txt
 threads/build/
+
+bochs/
+examples/
+filesys/
+lib/
+misc/
+tests/
+userprog/
+utils/
+vm/
