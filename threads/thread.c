@@ -182,6 +182,11 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+  //여기 프레임 쌓는 부분 살펴봐야될듯.
+  //시간 지나면 thread prirority 낮아지는 게 아니라 높은 priority를 가지고 있는 thread가 monopolize 하는건지?
+  //switch entry 의 ret addr 이 kernel_thread() 실행.
+  //kernel_thread의 thread_func가 priority를 안바꿔 주면 이 thread계속 실행하는거?
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -195,6 +200,9 @@ thread_create (const char *name, int priority,
   /* Stack frame for switch_threads(). */
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
+
+  //priority 가 현재 priority 보다 높으면 바로 yield 후 실행
+  //return value 는 어떻게 처리??
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -235,6 +243,8 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
+
+  //여기도 바꿔야 되나?
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
@@ -315,6 +325,8 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  // 만약 priority가 낮다면 바로 thread_yield
+  // schedule()
 }
 
 /* Returns the current thread's priority. */
@@ -463,9 +475,11 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void) 
 {
+  
   if (list_empty (&ready_list))
     return idle_thread;
   else
+    ///여기 priority가 젤 높은애를 뽑아오게 바꾸기
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
@@ -535,6 +549,11 @@ schedule (void)
 
   if (curr != next)
     prev = switch_threads (curr, next);
+
+  //여기부터 실행 안될거 같은데..
+  // ???? 이거는 어짜피 실행 안될거 같은데 왜 있는거?
+  //처음 만들어진 thread가 아니라서 밑에 switch_entry_frame이 아니면 실행되는 거 같다.
+
   schedule_tail (prev); 
 }
 

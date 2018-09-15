@@ -69,6 +69,12 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
+      //여기서 push_back 하기 전에 priority donation 구현
+      //holder 어떻게 받아오지?
+      //아무튼 holder 찾아서 priority가 나보다 낮으면 주기
+      //얼만큼? m
+      //thread에 donation_list(thread*, short priority) 추가
+
       list_push_back (&sema->waiters, &thread_current ()->elem);
       thread_block ();
     }
