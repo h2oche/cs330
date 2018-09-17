@@ -99,6 +99,10 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+
+
+    /* @@@ timer.c */
+    int64_t wakeup_ticks;		/* tick 저장 */
   };
 
 /* If false (default), use round-robin scheduler.
@@ -132,5 +136,9 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
+
+bool compare_priority(const struct list_elem *, const struct list_elem *, void *);
+
+
 
 #endif /* threads/thread.h */
