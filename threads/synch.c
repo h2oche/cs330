@@ -102,6 +102,20 @@ sema_try_down (struct semaphore *sema)
   return success;
 }
 
+void
+print_thread_list(struct list* _list)
+{
+  ASSERT(intr_get_level() == INTR_OFF);
+
+  struct list_elem* e;
+
+  for(e = list_begin(_list); e != list_end(_list); e = list_next(_list)){
+    struct thread* t = list_entry(e, struct thread, elem);
+    if(!strcmp(t->name, "main")) continue;
+    printf("thread[%s] with priority [%d]\n", t->name, t->priority);
+  }
+}
+
 /* Up or "V" operation on a semaphore.  Increments SEMA's value
    and wakes up one thread of those waiting for SEMA, if any.
 
@@ -114,13 +128,20 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
+  struct thread* t = NULL;
+
   if (!list_empty (&sema->waiters)){
     /* priority 순으로 sort 한 다음 pop */
     list_sort(&sema->waiters, compare_priority, NULL);
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+    t= list_entry (list_pop_front (&sema->waiters),
+                                struct thread, elem);
+    thread_unblock(t);
   }
   sema->value++;
+
+  if(t && t->priority > thread_current() -> priority)
+    thread_yield();
+
   intr_set_level (old_level);
 }
 
@@ -326,9 +347,10 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
 
   if (!list_empty (&cond->waiters)) {
     /* priority 순으로 sort 한 다음 pop */
-    list_sort(&cond->waiters, compare_priority, NULL);
-    sema_up (&list_entry (list_pop_front (&cond->waiters),
-                          struct semaphore_elem, elem)->semaphore);
+    // list_sort(&cond->waiters, compare_priority, NULL);
+    // sema_up (&list_entry (list_pop_front (&cond->waiters),
+    //                       struct semaphore_elem, elem)->semaphore);
+    
   }
 }
 
