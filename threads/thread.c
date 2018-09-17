@@ -182,11 +182,6 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
-  //여기 프레임 쌓는 부분 살펴봐야될듯.
-  //시간 지나면 thread prirority 낮아지는 게 아니라 높은 priority를 가지고 있는 thread가 monopolize 하는건지?
-  //switch entry 의 ret addr 이 kernel_thread() 실행.
-  //kernel_thread의 thread_func가 priority를 안바꿔 주면 이 thread계속 실행하는거?
-
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -201,11 +196,12 @@ thread_create (const char *name, int priority,
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
 
-  //priority 가 현재 priority 보다 높으면 바로 yield 후 실행
-  //return value 는 어떻게 처리??
-
   /* Add to run queue. */
   thread_unblock (t);
+
+  /* 지금 실행 중인 thread의 priority가 더 낮으면 yield */
+  if(thread_current()->priority < t->priority)
+    thread_yield();
 
   return tid;
 }
@@ -243,8 +239,6 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-
-  //여기도 바꿔야 되나?
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
@@ -325,8 +319,15 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
-  // 만약 priority가 낮다면 바로 thread_yield
-  // schedule()
+
+  /* ready list에 더 큰 priority를 가진 애가 있으면 yield */
+  enum intr_level old_level = intr_disable();
+  if(!list_empty(&ready_list)){
+    list_sort(&ready_list, compare_priority, NULL);
+    if(new_priority < list_entry(list_begin(&ready_list), struct thread, elem)->priority)
+      thread_yield();
+  }
+  intr_set_level(old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -475,12 +476,13 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void) 
 {
-  
   if (list_empty (&ready_list))
     return idle_thread;
-  else
-    ///여기 priority가 젤 높은애를 뽑아오게 바꾸기
+  else{
+    /* priority 순으로 sort 한 다음 pop */
+    list_sort(&ready_list, compare_priority, NULL);
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -549,11 +551,6 @@ schedule (void)
 
   if (curr != next)
     prev = switch_threads (curr, next);
-
-  //여기부터 실행 안될거 같은데..
-  // ???? 이거는 어짜피 실행 안될거 같은데 왜 있는거?
-  //처음 만들어진 thread가 아니라서 밑에 switch_entry_frame이 아니면 실행되는 거 같다.
-
   schedule_tail (prev); 
 }
 
@@ -574,3 +571,15 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+
+bool
+compare_priority(const struct list_elem *left, const struct list_elem *right, void *empty)
+{
+  const struct thread *l = list_entry(left, struct thread, elem);
+  const struct thread *r = list_entry(right, struct thread, elem);
+
+  if(l->priority > r->priority)
+    return true;
+  return false;
+}
