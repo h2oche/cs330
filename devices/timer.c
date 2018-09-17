@@ -29,6 +29,8 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 
+static struct list sleep_list; 
+
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
    corresponding interrupt. */
@@ -44,6 +46,9 @@ timer_init (void)
   outb (0x40, count >> 8);
 
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+
+  //init sleep list
+  list_init(&sleep_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -99,8 +104,19 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  // while (timer_elapsed (start) < ticks) 
+  //   thread_yield ();
+
+  enum intr_level old_level;
+  old_level = intr_disable ();
+
+  struct thread* t = thread_current();
+  //sleep_list 에 넣고 block
+  t->wakeup_ticks = ticks + start;
+  list_push_back(&sleep_list, &t->sleep_elem);
+  thread_block();
+
+  intr_set_level (old_level);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -136,6 +152,20 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+
+  //깨어날 애들 sleep list 에서 조사
+  ASSERT(intr_get_level() == INTR_OFF)
+  struct list_elem* e;
+  for(e = list_begin(&sleep_list) ; e != list_end(&sleep_list) ; e = list_next(e) ) {
+    struct thread* t = list_entry(e, struct thread, sleep_elem);
+
+    //시간 지났으면 깨움.
+    if(t->wakeup_ticks <= timer_ticks()) {
+      thread_unblock(t);
+      list_remove(e);
+    }
+  }
+
   thread_tick ();
 }
 

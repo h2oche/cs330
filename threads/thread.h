@@ -97,12 +97,12 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
 #endif
 
+    /* @@@ timer.c */
+    int64_t wakeup_ticks;   /* tick 저장 */
+    struct list_elem sleep_elem;  /* sleep list element */
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
-
-
-    /* @@@ timer.c */
-    int64_t wakeup_ticks;		/* tick 저장 */
   };
 
 /* If false (default), use round-robin scheduler.
