@@ -124,11 +124,14 @@ void
 sema_up (struct semaphore *sema) 
 {
   enum intr_level old_level;
+  bool need_yield = false;
 
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
   struct thread* t = NULL;
+
+  //sema_up 하는데 donor가 설정되어 있을경우
 
   if (!list_empty (&sema->waiters)){
     /* priority 순으로 sort 한 다음 pop */
@@ -140,9 +143,12 @@ sema_up (struct semaphore *sema)
   sema->value++;
 
   if(t && t->priority > thread_current() -> priority)
-    thread_yield();
+    need_yield = true;
 
   intr_set_level (old_level);
+
+  if(need_yield)
+    thread_yield();
 }
 
 static void sema_test_helper (void *sema_);
