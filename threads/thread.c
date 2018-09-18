@@ -322,12 +322,17 @@ thread_set_priority (int new_priority)
 
   /* ready list에 더 큰 priority를 가진 애가 있으면 yield */
   enum intr_level old_level = intr_disable();
+  bool need_yield = false;
+
   if(!list_empty(&ready_list)){
     list_sort(&ready_list, compare_priority, NULL);
     if(new_priority < list_entry(list_begin(&ready_list), struct thread, elem)->priority)
-      thread_yield();
+      need_yield = true;
   }
   intr_set_level(old_level);
+
+  if(need_yield)
+    thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -480,6 +485,7 @@ next_thread_to_run (void)
     return idle_thread;
   else{
     /* priority 순으로 sort 한 다음 pop */
+    // sorting -> pop 대신 list_max?
     list_sort(&ready_list, compare_priority, NULL);
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
   }
