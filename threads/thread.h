@@ -89,6 +89,14 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
 
+    /* Priority Donation */
+    // 자기가 들고 있는 락 목록들 list
+    struct list lock_list;
+    // 자기가 필요한 lock
+    struct lock* required_lock;
+    // 자기의 원래 priority
+    int original_priority;
+
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 

@@ -318,9 +318,11 @@ thread_yield (void)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+
+  //lock_list에 따라 뭔가 해야됨.
 
   /* ready list에 더 큰 priority를 가진 애가 있으면 yield */
+  thread_current ()->priority = new_priority;
   enum intr_level old_level = intr_disable();
   bool need_yield = false;
 
@@ -458,6 +460,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+
+  //lock list init
+   list_init(&t->lock_list);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

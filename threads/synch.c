@@ -70,6 +70,11 @@ sema_down (struct semaphore *sema)
   while (sema->value == 0) 
     {
       list_push_back (&sema->waiters, &thread_current ()->elem);
+
+      // thread_current() -> required_lock 있으면
+      // prioirty donation 을 실행 ( Nested Case 까지 생각 )
+      // lock의 prioirty를 설정
+
       thread_block ();
     }
   sema->value--;
@@ -130,8 +135,6 @@ sema_up (struct semaphore *sema)
 
   old_level = intr_disable ();
   struct thread* t = NULL;
-
-  //sema_up 하는데 donor가 설정되어 있을경우
 
   if (!list_empty (&sema->waiters)){
     /* priority 순으로 sort 한 다음 pop */
@@ -227,11 +230,15 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  /* lock->holder의 priority가 더 낮을 경우 donation */
-
+  /* lock->holder의 priority가 더 낮을 경우 required lock에 추가 */
+  if(lock -> holder && lock -> holder -> priority < thread_get_priority() ) {
+    thread_current() -> required_lock = lock;
+  }
 
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+  //lock_list에 현재의 lock 추가.
+  list_push_back(&thread_current()->lock_list, &lock->elem);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -268,6 +275,10 @@ lock_release (struct lock *lock)
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);
+
+  //자신의 원래 priority를 회복
+  // 여기서 lock_list에 잇는 lock의 priority를 보고 제일 높은걸로.
+  // set_priority에서 설정된 original priroity랑도 비교해 봐야될듯.
 }
 
 /* Returns true if the current thread holds LOCK, false
