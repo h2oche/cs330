@@ -318,19 +318,47 @@ thread_yield (void)
 void
 thread_set_priority (int new_priority) 
 {
-
-  //lock_list에 따라 뭔가 해야됨.
-
-  /* ready list에 더 큰 priority를 가진 애가 있으면 yield */
-  thread_current ()->priority = new_priority;
   enum intr_level old_level = intr_disable();
   bool need_yield = false;
+  struct thread* curr = thread_current();
 
-  if(!list_empty(&ready_list)){
-    list_sort(&ready_list, compare_priority, NULL);
-    if(new_priority < list_entry(list_begin(&ready_list), struct thread, elem)->priority)
-      need_yield = true;
+  //lock_list가 있을 경우
+  if(!list_empty(&curr -> lock_list)) {
+    struct lock* min_priority_lock = list_entry(list_front(&curr -> lock_list), struct lock, elem);
+    int priority_change_count = 0;
+
+    struct list_elem* le;
+    for(le = list_begin(&curr->lock_list); le != list_end(&curr -> lock_list); le = list_next(le)) {
+      struct lock* l = list_entry(le, struct lock, elem);
+
+      if(l -> holder_original_priority < new_priority ){
+        l -> holder_original_priority = new_priority;
+        priority_change_count++;
+      }
+
+      if(min_priority_lock -> holder_original_priority > l -> holder_original_priority)
+        min_priority_lock = l;
+    }
+
+    //new_priority의 값이 min_priority_lock의 holder의 priority보다 작을 경우
+    if(min_priority_lock -> holder_original_priority > new_priority) 
+      min_priority_lock -> holder_original_priority = new_priority;
+    //모든 lock_list의 priority가 바뀌었을 경우 new_priority가 젤 높으므로 현재 thread의 priority가 바뀌어야함.
+    if(priority_change_count == list_size(&curr -> lock_list))
+      curr -> priority = new_priority;
+  } 
+  //없을 경우 원래대로 동작.
+  else {
+    curr -> priority = new_priority;
+
+    /* ready list에 더 큰 priority를 가진 애가 있으면 yield */
+    if(!list_empty(&ready_list)){
+      list_sort(&ready_list, compare_priority, NULL);
+      if(new_priority < list_entry(list_begin(&ready_list), struct thread, elem)->priority)
+        need_yield = true;
+    }
   }
+  
   intr_set_level(old_level);
 
   if(need_yield)
@@ -463,6 +491,8 @@ init_thread (struct thread *t, const char *name, int priority)
 
   //lock list init
    list_init(&t->lock_list);
+   t->required_lock = NULL;
+   t->original_priority = -1;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and

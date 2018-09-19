@@ -24,6 +24,7 @@ struct lock
     struct semaphore semaphore; /* Binary semaphore controlling access. */
 
     /* priority donation */
+    int holder_original_priority;
     int priority;               //lock 의 priority
     struct list_elem elem;
   };
@@ -33,6 +34,9 @@ void lock_acquire (struct lock *);
 bool lock_try_acquire (struct lock *);
 void lock_release (struct lock *);
 bool lock_held_by_current_thread (const struct lock *);
+
+void priority_donate(struct lock* lock, int priority, int level);
+bool lock_compare_priority(const struct list_elem* left, const struct list_elem *right, void *aux);
 
 /* Condition variable. */
 struct condition 
