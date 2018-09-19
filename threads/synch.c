@@ -328,7 +328,7 @@ lock_release (struct lock *lock)
   intr_set_level(old_level);
 
   sema_up (&lock->semaphore);
-  
+  thread_yield();
 }
 
 bool
@@ -357,6 +357,7 @@ lock_held_by_current_thread (const struct lock *lock)
 struct semaphore_elem 
   {
     int priority;
+
     struct list_elem elem;              /* List element. */
     struct semaphore semaphore;         /* This semaphore. */
   };
@@ -448,7 +449,11 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
     struct semaphore_elem* se = list_entry(list_pop_front(&cond->waiters),
                                     struct semaphore_elem, elem);
 
+    // thread_set_priority(se->priority);
     sema_up(&se->semaphore);
+    // thread_yield();
+    // thread_current() -> priority = se -> priority;
+    
   }
 }
 
