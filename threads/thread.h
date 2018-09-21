@@ -107,7 +107,6 @@ struct thread
 
     /* @@@ timer.c */
     int64_t wakeup_ticks;   /* tick 저장 */
-    struct list_elem sleep_elem;  /* sleep list element */
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
