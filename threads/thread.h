@@ -94,8 +94,6 @@ struct thread
     struct list lock_list;
     // 자기가 필요한 lock
     struct lock* required_lock;
-    // 자기의 원래 priority
-    int original_priority;
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
