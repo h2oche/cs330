@@ -29,7 +29,8 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 
-static struct list sleep_list; 
+static struct list sleep_list; // 자는 thread 기록하는 list
+static bool is_less(const struct list_elem *, const struct list_elem *, void *);
 
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
@@ -107,16 +108,14 @@ timer_sleep (int64_t ticks)
   // while (timer_elapsed (start) < ticks) 
   //   thread_yield ();
 
-  enum intr_level old_level;
-  old_level = intr_disable ();
-
-  struct thread* t = thread_current();
-  //sleep_list 에 넣고 block
-  t->wakeup_ticks = ticks + start;
-  list_push_back(&sleep_list, &t->sleep_elem);
+  /* @@@ */
+  enum intr_level temp_level = intr_disable(); 
+  struct thread *curr = thread_current();
+  curr->wakeup_ticks = start+ticks;
+  list_insert_ordered(&sleep_list, &curr->elem, is_less, NULL);  
   thread_block();
-
-  intr_set_level (old_level);
+  intr_set_level(temp_level);
+  /* @@@ */
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -153,18 +152,17 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
 
-  //깨어날 애들 sleep list 에서 조사
-  ASSERT(intr_get_level() == INTR_OFF)
-  struct list_elem* e;
-  for(e = list_begin(&sleep_list) ; e != list_end(&sleep_list) ; e = list_next(e) ) {
-    struct thread* t = list_entry(e, struct thread, sleep_elem);
-
-    //시간 지났으면 깨움.
-    if(t->wakeup_ticks <= timer_ticks()) {
-      thread_unblock(t);
-      list_remove(e);
+  /* @@@ */
+  struct thread *p;
+  while(list_tail(&sleep_list) != list_begin(&sleep_list)){ // list에 thread가 존재할 경우
+    p = list_entry(list_begin(&sleep_list), struct thread, elem);
+    if(p->wakeup_ticks <= timer_ticks()){ // wakeup_ticks가 현재 ticks보다 작은 경우
+      list_remove(&p->elem); // list에서 없앰
+      thread_unblock(p);  // 다 깨움
     }
+    else break; // sort 되어 있으므로 나머지 애들은 더 자야함
   }
+  /* @@@ */
 
   thread_tick ();
 }
@@ -232,3 +230,16 @@ real_time_sleep (int64_t num, int32_t denom)
     }
 }
 
+/* list_insert_ordered() 함수에 사용될 함수 */
+static bool
+is_less (const struct list_elem *left, const struct list_elem *right, void *empty)
+{
+  const struct thread *l = list_entry(left, struct thread, elem);
+  const struct thread *r = list_entry(right, struct thread, elem);
+
+  if(l->wakeup_ticks < r->wakeup_ticks)
+    return true;
+  else if(l->wakeup_ticks == r->wakeup_ticks && l->priority >= r->priority)
+    return true;
+  return false;
+}
