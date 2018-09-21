@@ -109,12 +109,12 @@ timer_sleep (int64_t ticks)
   //   thread_yield ();
 
   /* @@@ */
-  enum intr_level temp_level = intr_disable(); 
+  enum intr_level old_level = intr_disable(); 
   struct thread *curr = thread_current();
   curr->wakeup_ticks = start+ticks;
   list_insert_ordered(&sleep_list, &curr->elem, is_less, NULL);  
   thread_block();
-  intr_set_level(temp_level);
+  intr_set_level(old_level);
   /* @@@ */
 }
 
@@ -153,6 +153,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
 
   /* @@@ */
+  enum intr_level old_level = intr_disable(); 
   struct thread *p;
   while(list_tail(&sleep_list) != list_begin(&sleep_list)){ // list에 thread가 존재할 경우
     p = list_entry(list_begin(&sleep_list), struct thread, elem);
@@ -162,6 +163,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
     }
     else break; // sort 되어 있으므로 나머지 애들은 더 자야함
   }
+  intr_set_level(old_level);
   /* @@@ */
 
   thread_tick ();
