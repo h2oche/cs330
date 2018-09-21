@@ -492,7 +492,6 @@ init_thread (struct thread *t, const char *name, int priority)
   //lock list init
    list_init(&t->lock_list);
    t->required_lock = NULL;
-   t->original_priority = -1;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
