@@ -101,6 +101,11 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
+  
+    int exit_status;                    /* 종료될 때 status 저장 */
+    struct list fd_infos;                  /* 열려 있는 파일들 */
+    int next_fd;
+  
 #endif
 
     /* @@@ timer.c */
