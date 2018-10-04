@@ -39,29 +39,29 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
   
   /* Argument 파싱 */
-  char *save_ptr = NULL;
-  char *token = NULL;
-  char *process_name;
-  bool is_name = true;
-  size_t len;
-  for(token=strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)){
-    /* 프로세스 이름 */
-    if(is_name && (len=strlen(token))!=0){
-      process_name = malloc(len+1);
-      strlcpy(process_name, token, len);
-      is_name = false;
-    }
-    /* 나머지 argument들은 어떻게 전달? */
-  }
-
-  /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (process_name, PRI_DEFAULT, start_process, fn_copy);
-  //tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+//  char *save_ptr = NULL;
+//  char *token = NULL;
+//  char *process_name;
+//  bool is_name = true;
+//  size_t len;
+//  for(token=strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)){
+//    /* 프로세스 이름 */
+//    if(is_name && (len=strlen(token))!=0){
+//      process_name = malloc(len+1);
+//      strlcpy(process_name, token, len);
+//      is_name = false;
+//    }
+//    /* 나머지 argument들은 어떻게 전달? */
+//  }
+//
+//  /* Create a new thread to execute FILE_NAME. */
+//  tid = thread_create (process_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   
   /* 할당한 거 free */
-  free(process_name);
+//  free(process_name);
   
   return tid;
 }

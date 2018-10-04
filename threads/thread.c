@@ -71,6 +71,9 @@ static void schedule (void);
 void schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+/* 파일 시스템에서 사용할 lock */
+struct lock filesys_lock;
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -91,6 +94,9 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
+
+  /* 파일 시스템에서 사용할 lock */
+  lock_init (&filesys_lock);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -622,4 +628,15 @@ compare_priority(const struct list_elem *left, const struct list_elem *right, vo
   if(l->priority > r->priority)
     return true;
   return false;
+}
+
+/* 파일 시스템 lock 관련 함수 */
+void lock_acquire_filesys ()
+{
+  lock_acquire(&filesys_lock);
+}
+
+void lock_release_filesys ()
+{
+  lock_release(&filesys_lock);
 }
