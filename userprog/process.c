@@ -21,6 +21,8 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+/* argument parsing */
+void push_user_stack(void* data, int length, void** esp) NO_RETURN;
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -46,6 +48,17 @@ process_execute (const char *file_name)
   return tid;
 }
 
+void
+push_user_stack(void* data, int length, void** esp)
+{
+  // memcpy((void*)(*esp - length), data, length);
+  // *esp = (void*)((uint32_t)*esp - length);
+  // printf("esp value : %08x\n", *esp);
+
+  strlcpy((char*)((uint32_t)*esp - length), data, length - 1);
+  *esp = (void*)((uint32_t)*esp - length);
+}
+
 /* A thread function that loads a user process and makes it start
    running. */
 static void
@@ -55,15 +68,111 @@ start_process (void *f_name)
   struct intr_frame if_;
   bool success;
 
+  /* argument parsing */
+  char* f_name_copy;
+  char* token, save_ptr;
+  int argc = 0;
+  char** argv;
+  int argv_array_size = 8;
+  // char padding[4] = {0,0,0,0};
+  // int align = 0;
+  /* argv malloc */
+  argv = (char**)calloc(sizeof(char*), argv_array_size);
+  // malloc이 제대로 안됬을 경우
+  if(!argv) {
+    palloc_free_page(file_name);
+    thread_exit();
+  }
+
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  
+  //file_name을 f_name_copy로 복사
+  f_name_copy = palloc_get_page (0);
+  if (f_name_copy == NULL){
+    free(argv);
+    palloc_free_page(file_name);
+    thread_exit();
+  }
+  strlcpy (f_name_copy, file_name, PGSIZE);
+
+  /* argument parsing */
+  char** old;
+  
+  for(token = strtok_r(f_name_copy, " ", &save_ptr);
+      token ;
+      token = strtok_r(NULL, " ", &save_ptr)) {
+    //처음일때는 아무것도 하지 않음 -> 위에서 한번 file_name parsing 했기 때문.
+    
+    //argc가 더 클 경우 argv realloc
+    if(argc >= argv_array_size) {
+      //realloc
+      old = argv;
+      argv_array_size *= 2;
+      argv = (char**)realloc(argv, sizeof(char*) * argv_array_size);
+       //realloc 실패 했을 경우
+      if(!argv) {
+        free(old);
+        palloc_free_page(file_name);
+        palloc_free_page(f_name_copy);
+        thread_exit();
+      }
+    }
+    
+    //token copy
+    argv[argc] = token;
+    //increasing argc
+    argc++;
+  }
+
+  int i = 0;
+  printf("argc : %d\n", argc);
+  for(i = 0 ; i < argc ; i += 1) {
+    printf("argv[%d] : %s\n", i, argv[i]);
+  }
+
+  //load program
+  success = load (argv[0], &if_.eip, &if_.esp);
+
+  //add argument to stack
+  //**argv add
+  for(i = argc - 1 ; i >= 0; i -= 1){
+    if_.esp -= strlen(argv[i]) + 1;
+    memcpy(if_.esp, argv[i], strlen(argv[i]) + 1);
+  }
+  //4byte alignment
+  if_.esp -= (uint32_t)if_.esp % 4;
+  //*argv add
+  int total = 0;
+  uint32_t addr = PHYS_BASE;
+
+  if_.esp -= 4;       //argv[argc] = 0
+  for(i = argc - 1 ; i >= 0; i -= 1) {
+    if_.esp -= 4;
+    addr -= strlen(argv[i]) + 1;
+    memcpy(if_.esp, &addr , 4);
+    // printf("argv[%d] : %s\n", i, addr);
+  }
+  //argv add
+  addr = if_.esp;
+  if_.esp -= 4;
+  memcpy(if_.esp, &addr, 4);
+  //argc add
+  if_.esp -= 4;
+  memcpy(if_.esp, &argc, 4);
+
+  // hex_dump(PHYS_BASE - 0x70, PHYS_BASE - 0x70, 0x70, true);
 
   /* If load failed, quit. */
+
+  /* 새로 memory 할당했던 것들 해제 */
+  free(argv);
+  palloc_free_page (f_name_copy);
   palloc_free_page (file_name);
+  
   if (!success) 
     thread_exit ();
 
