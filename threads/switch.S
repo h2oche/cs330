@@ -34,12 +34,10 @@ switch_threads:
 
 	# Save current stack pointer to old thread's stack, if any.
 	movl SWITCH_CUR(%esp), %eax
-	# curr->stack = current esp
 	movl %esp, (%eax,%edx,1)
 
 	# Restore stack pointer from new thread's stack.
 	movl SWITCH_NEXT(%esp), %ecx
-	# current esp = next->stack
 	movl (%ecx,%edx,1), %esp
 
 	# Restore caller's register state.
@@ -60,7 +58,6 @@ switch_entry:
 	pushl %eax
 .globl schedule_tail
 	call schedule_tail
-	# Discard schedule tail arguments
 	addl $4, %esp
 
 	# Start thread proper.

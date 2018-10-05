@@ -71,9 +71,6 @@ static void schedule (void);
 void schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
-/* 파일 시스템에서 사용할 lock */
-struct lock filesys_lock;
-
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -94,9 +91,6 @@ thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
-
-  /* 파일 시스템에서 사용할 lock */
-  lock_init (&filesys_lock);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -204,10 +198,6 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
-
-  /* 지금 실행 중인 thread의 priority가 더 낮으면 yield */
-  if(thread_current()->priority < t->priority)
-    thread_yield();
 
   return tid;
 }
@@ -324,51 +314,7 @@ thread_yield (void)
 void
 thread_set_priority (int new_priority) 
 {
-  enum intr_level old_level = intr_disable();
-  bool need_yield = false;
-  struct thread* curr = thread_current();
-
-  //lock_list가 있을 경우
-  if(!list_empty(&curr -> lock_list)) {
-    struct lock* min_priority_lock = list_entry(list_front(&curr -> lock_list), struct lock, elem);
-    int priority_change_count = 0;
-
-    struct list_elem* le;
-    for(le = list_begin(&curr->lock_list); le != list_end(&curr -> lock_list); le = list_next(le)) {
-      struct lock* l = list_entry(le, struct lock, elem);
-
-      if(l -> holder_original_priority < new_priority ){
-        l -> holder_original_priority = new_priority;
-        priority_change_count++;
-      }
-
-      if(min_priority_lock -> holder_original_priority > l -> holder_original_priority)
-        min_priority_lock = l;
-    }
-
-    //new_priority의 값이 min_priority_lock의 holder의 priority보다 작을 경우
-    if(min_priority_lock -> holder_original_priority > new_priority) 
-      min_priority_lock -> holder_original_priority = new_priority;
-    //모든 lock_list의 priority가 바뀌었을 경우 new_priority가 젤 높으므로 현재 thread의 priority가 바뀌어야함.
-    if(priority_change_count == list_size(&curr -> lock_list))
-      curr -> priority = new_priority;
-  } 
-  //없을 경우 원래대로 동작.
-  else {
-    curr -> priority = new_priority;
-
-    /* ready list에 더 큰 priority를 가진 애가 있으면 yield */
-    if(!list_empty(&ready_list)){
-      list_sort(&ready_list, compare_priority, NULL);
-      if(new_priority < list_entry(list_begin(&ready_list), struct thread, elem)->priority)
-        need_yield = true;
-    }
-  }
-  
-  intr_set_level(old_level);
-
-  if(need_yield)
-    thread_yield();
+  thread_current ()->priority = new_priority;
 }
 
 /* Returns the current thread's priority. */
@@ -494,10 +440,6 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
-
-  //lock list init
-   list_init(&t->lock_list);
-   t->required_lock = NULL;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -523,12 +465,8 @@ next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else{
-    /* priority 순으로 sort 한 다음 pop */
-    // sorting -> pop 대신 list_max?
-    list_sort(&ready_list, compare_priority, NULL);
+  else
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
-  }
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -617,26 +555,3 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
-
-
-bool
-compare_priority(const struct list_elem *left, const struct list_elem *right, void *empty)
-{
-  const struct thread *l = list_entry(left, struct thread, elem);
-  const struct thread *r = list_entry(right, struct thread, elem);
-
-  if(l->priority > r->priority)
-    return true;
-  return false;
-}
-
-/* 파일 시스템 lock 관련 함수 */
-void lock_acquire_filesys ()
-{
-  lock_acquire(&filesys_lock);
-}
-
-void lock_release_filesys ()
-{
-  lock_release(&filesys_lock);
-}

@@ -89,27 +89,13 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
 
-    /* Priority Donation */
-    // 자기가 들고 있는 락 목록들 list
-    struct list lock_list;
-    // 자기가 필요한 lock
-    struct lock* required_lock;
-
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-  
-    int exit_status;                    /* 종료될 때 status 저장 */
-    struct list fd_infos;                  /* 열려 있는 파일들 */
-    int next_fd;
-  
 #endif
-
-    /* @@@ timer.c */
-    int64_t wakeup_ticks;   /* tick 저장 */
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
@@ -146,9 +132,5 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-
-bool compare_priority(const struct list_elem *, const struct list_elem *, void *);
-
-
 
 #endif /* threads/thread.h */

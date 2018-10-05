@@ -29,9 +29,6 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 
-static struct list sleep_list; // 자는 thread 기록하는 list
-static bool is_less(const struct list_elem *, const struct list_elem *, void *);
-
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
    corresponding interrupt. */
@@ -47,9 +44,6 @@ timer_init (void)
   outb (0x40, count >> 8);
 
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
-
-  //init sleep list
-  list_init(&sleep_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -105,17 +99,8 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  // while (timer_elapsed (start) < ticks) 
-  //   thread_yield ();
-
-  /* @@@ */
-  enum intr_level old_level = intr_disable(); 
-  struct thread *curr = thread_current();
-  curr->wakeup_ticks = start+ticks;
-  list_insert_ordered(&sleep_list, &curr->elem, is_less, NULL);  
-  thread_block();
-  intr_set_level(old_level);
-  /* @@@ */
+  while (timer_elapsed (start) < ticks) 
+    thread_yield ();
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -151,21 +136,6 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-
-  /* @@@ */
-  enum intr_level old_level = intr_disable(); 
-  struct thread *p;
-  while(list_tail(&sleep_list) != list_begin(&sleep_list)){ // list에 thread가 존재할 경우
-    p = list_entry(list_begin(&sleep_list), struct thread, elem);
-    if(p->wakeup_ticks <= timer_ticks()){ // wakeup_ticks가 현재 ticks보다 작은 경우
-      list_remove(&p->elem); // list에서 없앰
-      thread_unblock(p);  // 다 깨움
-    }
-    else break; // sort 되어 있으므로 나머지 애들은 더 자야함
-  }
-  intr_set_level(old_level);
-  /* @@@ */
-
   thread_tick ();
 }
 
@@ -232,16 +202,3 @@ real_time_sleep (int64_t num, int32_t denom)
     }
 }
 
-/* list_insert_ordered() 함수에 사용될 함수 */
-static bool
-is_less (const struct list_elem *left, const struct list_elem *right, void *empty)
-{
-  const struct thread *l = list_entry(left, struct thread, elem);
-  const struct thread *r = list_entry(right, struct thread, elem);
-
-  if(l->wakeup_ticks < r->wakeup_ticks)
-    return true;
-  else if(l->wakeup_ticks == r->wakeup_ticks && l->priority >= r->priority)
-    return true;
-  return false;
-}

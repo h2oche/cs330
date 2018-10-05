@@ -1,6 +1,7 @@
 threads/bochsout.txt
 threads/bochsrc.txt
 threads/build/
+.vscode/
 
 userprog/build/
 
