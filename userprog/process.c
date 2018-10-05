@@ -4,7 +4,6 @@
 #include <round.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <list.h>
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
@@ -38,39 +37,12 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
-  
-  /* Argument 파싱 */
-//  char *save_ptr = NULL;
-//  char *token = NULL;
-//  char *process_name;
-//  bool is_name = true;
-//  size_t len;
-//  for(token=strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)){
-//    /* 프로세스 이름 */
-//    if(is_name && (len=strlen(token))!=0){
-//      process_name = malloc(len+1);
-//      strlcpy(process_name, token, len);
-//      is_name = false;
-//    }
-//    /* 나머지 argument들은 어떻게 전달? */
-//  }
-//
-//  /* Create a new thread to execute FILE_NAME. */
-//  tid = thread_create (process_name, PRI_DEFAULT, start_process, fn_copy);
+
+  /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
-  
-  /* 할당한 거 free */
-//  free(process_name);
-  
   return tid;
-}
-
-void
-push_user_stack(void* data, int length, void** esp)
-{
-
 }
 
 /* A thread function that loads a user process and makes it start
@@ -82,103 +54,15 @@ start_process (void *f_name)
   struct intr_frame if_;
   bool success;
 
-  /* argument parsing */
-  char* f_name_copy;
-  char* token, save_ptr;
-
-  int argc = 0;
-  char** argv;
-  int argv_array_size = 8;
-  char alignment[4] = {0,0,0,0};
-
-  /* argv malloc */
-
-  argv = (char**)calloc(sizeof(char*), argv_array_size);
-
-  // malloc이 제대로 안됬을 경우
-  if(!argv) {
-    palloc_free_page(file_name);
-    return;
-  }
-
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-
-  //file_name을 f_name_copy로 복사
-  f_name_copy = palloc_get_page (0);
-  if (f_name_copy == NULL){
-    free(argv);
-    palloc_free_page(file_name);
-    return TID_ERROR;
-  }
-  strlcpy (f_name_copy, file_name, PGSIZE);
-  
-  //parsing file_name
-  token = strtok_r(f_name_copy, " ", &save_ptr);
-  argv[0] = token;
-  argc++;
-
-  //load program
-  success = load (token, &if_.eip, &if_.esp);
-
-  /* argument parsing */
-  bool is_first = true;
-  char** old;
-  int i = 0;
-
-  //parsing argument
-  for(; token ;
-      token = strtok_r(NULL, " ", &save_ptr)) {
-    //처음일때는 아무것도 하지 않음 -> 위에서 한번 file_name parsing 했기 때문.
-    if( is_first || (is_first = false) ) continue;
-    
-    //argc가 더 클 경우 argv realloc
-    if(argc >= argv_array_size) {
-      //realloc
-      old = argv;
-      argv_array_size *= 2;
-      argv = (char**)realloc(argv, sizeof(char*) * argv_array_size);
-
-      //realloc 실패 했을 경우
-      if(!argv) {
-        free(old);
-        palloc_free_page(file_name);
-        palloc_free_page(f_name_copy);
-        return;
-      }
-    }
-    
-    //token copy
-    argv[argc] = token;
-    // strlcpy(argv[argc], token, strlen(token) + 1);
-    //increasing argc
-    argc++;
-  }
-
-  //copy argv, argc to stack in right order
-  //argv[][] 넣기
-  for(i = 0; i < argc ; i += 1)
-    push_user_stack(argv[i], strlen(argv[i]) + 1, &if_.esp);
-  //add 4-byte alignment
-  push_user_stack(alignment, ((uint32_t)&if_.esp) % 4, &if_.esp);
-  //argv[] 넣기
-  push_user_stack(argv, sizeof(char*) * argc, &if_.esp);
-  //argv 넣기
-  //argc 넣기
+  success = load (file_name, &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
-
-  /* argv 에 할당했던 memory 해제 */
-  //goto 문으로 바꾸기
-  // for(i = 0 ; i < argc ; i += 1)
-  //   free(argv[i]);
-  free(argv);
   palloc_free_page (file_name);
-  palloc_free_page (f_name_copy);         // 새로 할당했던 f_name_copy 해제
-
   if (!success) 
     thread_exit ();
 
@@ -190,7 +74,7 @@ start_process (void *f_name)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
-} 
+}
 
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
@@ -213,13 +97,7 @@ process_exit (void)
 {
   struct thread *curr = thread_current ();
   uint32_t *pd;
-   
-  /* 프로세스 종료 메세지 */
-  // printf ("%s: exit(%d)\n", curr->name, curr->exit_code);
-  
-  /* 열려있는 fd 다 close */
-  // close()...
-   
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = curr->pagedir;
