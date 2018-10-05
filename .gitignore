@@ -1,9 +1,13 @@
 threads/bochsout.txt
 threads/bochsrc.txt
 threads/build/
+
+.DS_Store
 .vscode/
 
 userprog/build/
+userprog/bochsout.txt
+userprog/bochsrc.txt
 
 sftp-config.json
 
