@@ -1,6 +1,9 @@
 threads/bochsout.txt
 threads/bochsrc.txt
 threads/build/
+
+userprog/build/
+
 sftp-config.json
 
 bochs/
@@ -9,6 +12,5 @@ filesys/
 lib/
 misc/
 tests/
-userprog/
 utils/
 vm/
