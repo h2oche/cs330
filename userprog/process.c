@@ -18,11 +18,114 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/synch.h"
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-/* argument parsing */
-void push_user_stack(void* data, int length, void** esp) NO_RETURN;
+///* argument parsing */
+//static void push_user_stack(void* data, int length, void** esp);
+
+/* 자식 기록하기 위해서 사용 */
+struct child_info
+{
+  tid_t tid;
+  bool is_alive;
+  bool is_waited;
+  struct semaphore wait_sema;
+  int exit_status;
+  struct list_elem elem;
+};
+
+/*----------------------------------------------------------------------------*/
+
+/* child info 생성 함수 */
+static struct child_info *
+create_child_info (tid_t tid)
+{
+  struct child_info *c = (struct child_info *)malloc(sizeof(struct child_info));
+
+  // malloc 실패
+  if(c==NULL)
+    return NULL;
+
+  c->tid = tid;
+  c->is_alive = true;
+  c->is_waited = false;
+  c-> exit_status = 0;
+  sema_init(&c->wait_sema, 0);
+
+  return c;
+}
+
+/*----------------------------------------------------------------------------*/
+
+/* thread가 가진 children 중 해당 tid를 갖는 child_info를 return. 없으면 NULL  */
+static struct child_info *
+get_child_info(struct thread *t, tid_t tid)
+{
+  struct child_info* child = NULL;
+  struct list_elem *le = NULL;
+  for(le = list_begin(&t->children);
+      le != list_end(&t->children);
+      le = list_next(le))
+  {
+    child = list_entry(le, struct child_info, elem);
+    if(child->tid == tid)
+      return child;
+  }
+  return NULL;
+}
+
+/*----------------------------------------------------------------------------*/
+
+/* child info를 모두 제거 함수 */
+static void
+destroy_children(struct thread* t)
+{
+  struct child_info *c = NULL;
+  struct list_elem *le = NULL;
+  struct list_elem *nle = NULL;
+
+  for(le = list_begin(&t->children);
+      le != list_end(&t->children);
+      le = nle)
+  {
+    nle = list_next(le);
+    c = list_entry(le, struct child_info, elem);
+
+    /* 리스트에서 없애고 free */
+    list_remove(&c->elem);
+    free(c);
+  }
+}
+
+/*----------------------------------------------------------------------------*/
+
+/* fd_info를 모두 제거하는 함수 */
+static void
+destroy_fd_infos(struct thread* t)
+{
+  struct fd_info *f = NULL;
+  struct list_elem *le = NULL;
+  struct list_elem *nle = NULL;
+
+  for(le = list_begin(&t->fd_infos);
+      le != list_end(&t->fd_infos);
+      le = nle)
+  {
+    nle = list_next(le);
+    f = list_entry(le, struct fd_info, elem);
+
+    /* 열러 있는 파일 닫기 */
+    file_close(f->file);
+
+    /* 리스트에서 없애고 free */
+    list_remove(&f->elem);
+    free(f);
+  }
+}
+
+/*----------------------------------------------------------------------------*/
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -33,6 +136,8 @@ process_execute (const char *file_name)
 {
   char *fn_copy;
   tid_t tid;
+
+//  printf("process_execute()\n");
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
@@ -45,19 +150,33 @@ process_execute (const char *file_name)
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
+
+  /* child_info 생성 */
+  struct child_info *c = create_child_info(tid);
+  if(c == NULL){ // 실패할 경우 error return
+    palloc_free_page (fn_copy);
+    tid = TID_ERROR;
+  }
+  
+  /* 현재 thread(=parent)의 children에 저장 */
+  struct thread* curr = thread_current();
+  list_push_back(&curr->children, &c->elem);
+
+//  printf("end process_execute()\n");
+
   return tid;
 }
 
-void
-push_user_stack(void* data, int length, void** esp)
-{
-  // memcpy((void*)(*esp - length), data, length);
-  // *esp = (void*)((uint32_t)*esp - length);
-  // printf("esp value : %08x\n", *esp);
-
-  strlcpy((char*)((uint32_t)*esp - length), data, length - 1);
-  *esp = (void*)((uint32_t)*esp - length);
-}
+//static void
+//push_user_stack(void* data, int length, void** esp)
+//{
+//  // memcpy((void*)(*esp - length), data, length);
+//  // *esp = (void*)((uint32_t)*esp - length);
+//  // printf("esp value : %08x\n", *esp);
+//
+//  strlcpy((char*)((uint32_t)*esp - length), data, length - 1);
+//  *esp = (void*)((uint32_t)*esp - length);
+//}
 
 /* A thread function that loads a user process and makes it start
    running. */
@@ -68,9 +187,12 @@ start_process (void *f_name)
   struct intr_frame if_;
   bool success;
 
+//  printf("start_process()\n");
+
   /* argument parsing */
   char* f_name_copy;
-  char* token, save_ptr;
+  char* token; 
+  char* save_ptr;
   int argc = 0;
   char** argv;
   int argv_array_size = 8;
@@ -146,8 +268,8 @@ start_process (void *f_name)
   //4byte alignment
   if_.esp -= (uint32_t)if_.esp % 4;
   //*argv add
-  int total = 0;
-  uint32_t addr = PHYS_BASE;
+  //int total = 0;
+  uint32_t addr = (uint32_t)PHYS_BASE;
 
   if_.esp -= 4;       //argv[argc] = 0
   for(i = argc - 1 ; i >= 0; i -= 1) {
@@ -157,14 +279,14 @@ start_process (void *f_name)
     // printf("argv[%d] : %s\n", i, addr);
   }
   //argv add
-  addr = if_.esp;
+  addr = (uint32_t)if_.esp;
   if_.esp -= 4;
   memcpy(if_.esp, &addr, 4);
   //argc add
   if_.esp -= 4;
   memcpy(if_.esp, &argc, 4);
 
-  // hex_dump(PHYS_BASE - 0x70, PHYS_BASE - 0x70, 0x70, true);
+  hex_dump(PHYS_BASE - 0x70, PHYS_BASE - 0x70, 0x70, true);
 
   /* If load failed, quit. */
 
@@ -173,7 +295,7 @@ start_process (void *f_name)
   palloc_free_page (f_name_copy);
   palloc_free_page (file_name);
   
-  if (!success) 
+  if (!success)
     thread_exit ();
 
   /* Start the user process by simulating a return from an
@@ -192,16 +314,41 @@ start_process (void *f_name)
    child of the calling process, or if process_wait() has already
    been successfully called for the given TID, returns -1
    immediately, without waiting.
-
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  /* infinite loop */
-  while(true)
-    barrier();
-  return -1;
+//  /* infinite loop */
+//  while(true)
+//    barrier();
+//  return -1;
+
+//  printf("process_wait()\n");
+
+  struct child_info* c = get_child_info(thread_current(), child_tid);
+
+  /* TID is invalid 또는
+     it was not a child of the calling process인 경우 */
+  if(c==NULL)
+    return -1;
+  
+  /* process_wait() has already been successfully called for the TID 인 경우 */
+  if(c->is_waited)
+    return -1;
+
+  c->is_waited = true;
+  sema_down(&c->wait_sema);
+
+  int exit_status = c->exit_status;
+
+  list_remove(&c->elem);
+  free(c);
+
+//  printf("end process_wait()\n");
+//  printf("exit_status: %d\n", exit_status);
+
+  return exit_status;
 }
 
 /* Free the current process's resources. */
@@ -210,6 +357,21 @@ process_exit (void)
 {
   struct thread *curr = thread_current ();
   uint32_t *pd;
+
+  /* parent가 가지고 있는 child_info를 업데이트 해줌 */
+  struct child_info *c = get_child_info(curr->parent, curr->tid);
+  c->is_alive = false;
+  c->exit_status = curr->exit_status;
+  sema_up(&c->wait_sema);
+
+  file_allow_write(curr->exe_file);
+  file_close(curr->exe_file);
+
+  /* 열었던 파일 모두 닫고 fd_info 삭제 */
+  destroy_fd_infos(curr);
+
+  /* child_info 모두 제거  */
+  destroy_children(curr);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -227,6 +389,8 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
+  printf("%s: exit(%d)\n", curr->name, curr->exit_status);
 }
 
 /* Sets up the CPU for running user code in the current
@@ -328,6 +492,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
+//  printf("load()\n");
+
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
@@ -425,7 +591,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  if(success){
+    file_deny_write(file);
+    t->exe_file = file;
+  }
+  else
+    file_close (file);
+
   return success;
 }
 
@@ -481,15 +653,11 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 /* Loads a segment starting at offset OFS in FILE at address
    UPAGE.  In total, READ_BYTES + ZERO_BYTES bytes of virtual
    memory are initialized, as follows:
-
         - READ_BYTES bytes at UPAGE must be read from FILE
           starting at offset OFS.
-
         - ZERO_BYTES bytes at UPAGE + READ_BYTES must be zeroed.
-
    The pages initialized by this function must be writable by the
    user process if WRITABLE is true, read-only otherwise.
-
    Return true if successful, false if a memory allocation error
    or disk read error occurs. */
 static bool

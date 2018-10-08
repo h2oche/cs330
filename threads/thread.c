@@ -71,6 +71,8 @@ static void schedule (void);
 void schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+bool is_init = true;
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -94,9 +96,13 @@ thread_init (void)
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
+
   init_thread (initial_thread, "main", PRI_DEFAULT);
+
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+
+  is_init = false;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -440,6 +446,17 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+
+#ifdef USERPROG
+  if(!is_init)
+    t->parent = thread_current();
+  list_init(&t->fd_infos);
+  t->next_fd = 3;
+  t->exit_status = 0;
+  list_init(&t->children);
+#endif
+
+
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -555,3 +572,5 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+

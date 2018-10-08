@@ -11,14 +11,10 @@
 #include "threads/init.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "threads/synch.h"
 
+static struct semaphore sema_filesys;
 static void syscall_handler (struct intr_frame *);
-struct fd_info
-{
-  int fd;
-  struct file* file;
-  struct list_elem elem;
-};
 
 /*---------------------------------------------------------------------------------------*/
 /* Reads a byte at user virtual address UADDR.
@@ -73,7 +69,7 @@ static void error_exit (void)
 /*---------------------------------------------------------------------------------------*/
 
 /* user 포인터 확인하는 함수 */
-static bool is_valid_ptr(void *base, unsigned size)
+static bool is_valid_ptr(const void *base, unsigned size)
 {
   uint8_t *ptr = (uint8_t *)base;
 
@@ -88,7 +84,7 @@ static bool is_valid_ptr(void *base, unsigned size)
 static bool is_valid_string(const char *str)
 {
   int c;
-  uint8_t *p = (uint8_t)str;
+  uint8_t *p = (uint8_t *)str;
   for(c=get_user(p); c != -1; c=get_user(p)){
     if(c=='\0')
       return true; // string 끝날 때 까지 다 valid 한 경우
@@ -97,7 +93,7 @@ static bool is_valid_string(const char *str)
   return false; // get_user 결과가 -1인 경우
 }
 
-static bool is_valid_buffer(void * buffer, unsigned size)
+static bool is_valid_buffer(const void * buffer, unsigned size)
 {
   if(!is_valid_ptr(buffer, size))
     return false;
@@ -108,7 +104,7 @@ static bool is_valid_buffer(void * buffer, unsigned size)
 
 static void syscall_exit(struct intr_frame *f)
 {
-  printf("syscall - exit\n");
+//  printf("syscall - exit\n");
   if(!is_valid_ptr(f->esp+4, 4))
     return error_exit();
 
@@ -121,7 +117,7 @@ static void syscall_exit(struct intr_frame *f)
 
 static void syscall_exec(struct intr_frame *f)
 {
-  printf("syscall - exec\n");
+//  printf("syscall - exec\n");
   if(!is_valid_ptr(f->esp+4, 4))
     return error_exit();
 
@@ -136,7 +132,7 @@ static void syscall_exec(struct intr_frame *f)
 
 static void syscall_wait(struct intr_frame *f)
 {
-  printf("syscall - wait\n");
+//  printf("syscall - wait\n");
   if(!is_valid_ptr(f->esp+4, 4))
     return error_exit();
 
@@ -148,7 +144,7 @@ static void syscall_wait(struct intr_frame *f)
 
 static void syscall_create(struct intr_frame *f)
 {
-  printf("syscall - create\n");
+//  printf("syscall - create\n");
   if(!is_valid_ptr(f->esp+4, 4) || !is_valid_ptr(f->esp+8, 4))
     return error_exit();
 
@@ -157,16 +153,16 @@ static void syscall_create(struct intr_frame *f)
     return error_exit();
   unsigned initial_size = *(unsigned *)(f->esp+8);
 
-  lock_acquire_filesys();
+  sema_down(&sema_filesys);
   f->eax = filesys_create(file, initial_size);
-  lock_release_filesys();
+  sema_up(&sema_filesys);
 }
 
 /*---------------------------------------------------------------------------------------*/
 
 static void syscall_remove(struct intr_frame *f)
 {
-  printf("syscall - create\n");
+//  printf("syscall - create\n");
   if(!is_valid_ptr(f->esp+4, 4))
     return error_exit();
 
@@ -174,16 +170,16 @@ static void syscall_remove(struct intr_frame *f)
   if(!is_valid_string(file))
     return error_exit();
 
-  lock_acquire_filesys();
+  sema_down(&sema_filesys);
   f->eax = filesys_remove(file);
-  lock_release_filesys();
+  sema_up(&sema_filesys);
 }
 
 /*---------------------------------------------------------------------------------------*/
 
 static void syscall_open(struct intr_frame *f)
 {
-  printf("syscall - open\n");
+//  printf("syscall - open\n");
   if(!is_valid_ptr(f->esp+4, 4))
     return error_exit();
 
@@ -193,12 +189,12 @@ static void syscall_open(struct intr_frame *f)
 
   int fd = -1;
 
-  lock_acquire_filesys();
+  sema_down(&sema_filesys);
   struct file* open_file = filesys_open(file);
 
   /* process가 열 수 있는 파일 개수 128개로 제한 - FAQ */
   if(file == NULL || thread_current()->next_fd > 128){
-    lock_release_filesys();
+    sema_up(&sema_filesys);
     return error_exit();
   }
 
@@ -210,14 +206,14 @@ static void syscall_open(struct intr_frame *f)
   fd = pfd_info->fd;
   f->eax = fd;
 
-  lock_release_filesys();
+  sema_up(&sema_filesys);
 }
 
 /*---------------------------------------------------------------------------------------*/
 
 static void syscall_filesize(struct intr_frame *f)
 {
-  printf("syscall - filesize\n");
+//  printf("syscall - filesize\n");
   if(!is_valid_ptr(f->esp+4, 4))
     return error_exit();
 
@@ -230,18 +226,18 @@ static void syscall_filesize(struct intr_frame *f)
     return error_exit();
   }
 
-  lock_acquire_filesys();
+  sema_down(&sema_filesys);
 
   len = file_length(file);
   f->eax = len;
-  lock_release_filesys();
+  sema_up(&sema_filesys);
 }
 
 /*---------------------------------------------------------------------------------------*/
 
 static void syscall_read(struct intr_frame *f)
 {
-  printf("syscall - read\n");
+//  printf("syscall - read\n");
   if(!is_valid_ptr(f->esp+4, 4) || !is_valid_ptr(f->esp+8,4) || !is_valid_ptr(f->esp+12, 4))
     return error_exit();
 
@@ -268,9 +264,9 @@ static void syscall_read(struct intr_frame *f)
     if(file == NULL){
       return error_exit();
     }
-    lock_acquire_filesys();
+    sema_down(&sema_filesys);
     read_size = file_read(file, buffer, size);
-    lock_release_filesys();
+    sema_up(&sema_filesys);
   }
 
   f->eax = read_size;
@@ -280,13 +276,18 @@ static void syscall_read(struct intr_frame *f)
 
 static void syscall_write(struct intr_frame *f)
 {
-  printf("syscall - write\n");
+//  printf("syscall - write\n");
   if(!is_valid_ptr(f->esp+4, 4) || !is_valid_ptr(f->esp+8, 4) || !is_valid_ptr(f->esp+12, 4))
     return error_exit();
 
   int fd = *(int *)(f->esp+4);
-  const void *buffer = *(void **)(f->esp+8);
+  const void *buffer = *(char **)(f->esp+8);
   unsigned size = *(unsigned *)(f->esp+12);
+
+//  printf("esp: %p\n", f->esp);
+//  hex_dump(PHYS_BASE - 0x90, PHYS_BASE - 0x90, 0x90, true);
+//  printf("buffer address: %p\n", &buffer);
+//  printf("pointer: %p \n", buffer);
 
   if(!is_valid_buffer(buffer, size))
     return error_exit();
@@ -294,17 +295,19 @@ static void syscall_write(struct intr_frame *f)
   int write_size = -1;
   /* stdout 인 경우 */
   if(fd == 1){
+    sema_down(&sema_filesys);
     putbuf((char *)buffer, (size_t)size);
     write_size = (int)size;
+    sema_up(&sema_filesys);
   }
   else{
     struct file* file = fd_to_file(fd);
     if(file == NULL){
       return error_exit();
     }
-    lock_acquire_filesys();
+    sema_down(&sema_filesys);
     write_size = file_write(file, buffer, size);
-    lock_release_filesys();
+    sema_up(&sema_filesys);
   }
 
   f->eax = write_size;
@@ -314,7 +317,7 @@ static void syscall_write(struct intr_frame *f)
 
 static void syscall_seek(struct intr_frame *f)
 {
-  printf("syscall - seek\n");
+//  printf("syscall - seek\n");
   if(!is_valid_ptr(f->esp+4, 4) || !is_valid_ptr(f->esp+8, 4))
     return error_exit();
 
@@ -325,16 +328,16 @@ static void syscall_seek(struct intr_frame *f)
   if(file == NULL){
     return error_exit();
   }
-  lock_acquire_filesys();
+  sema_down(&sema_filesys);
   file_seek(file, position);
-  lock_release_filesys();
+  sema_up(&sema_filesys);
 }
 
 /*---------------------------------------------------------------------------------------*/
 
 static void syscall_tell(struct intr_frame *f)
 {
-  printf("syscall - tell\n");
+//  printf("syscall - tell\n");
   if(!is_valid_ptr(f->esp+4, 4))
     return error_exit();
 
@@ -344,16 +347,16 @@ static void syscall_tell(struct intr_frame *f)
   if(file == NULL){
     return error_exit();
   }
-  lock_acquire_filesys();
+  sema_down(&sema_filesys);
   f->eax = file_tell(file);
-  lock_release_filesys();
+  sema_up(&sema_filesys);
 }
 
 /*---------------------------------------------------------------------------------------*/
 
 static void syscall_close(struct intr_frame *f)
 {
-  printf("syscall - close\n");
+//  printf("syscall - close\n");
   if(!is_valid_ptr(f->esp+4, 4))
     return error_exit();
 
@@ -363,9 +366,9 @@ static void syscall_close(struct intr_frame *f)
   if(file == NULL){
     return error_exit();
   }
-  lock_acquire_filesys();
+  sema_down(&sema_filesys);
   file_close(file);
-  lock_release_filesys();
+  sema_up(&sema_filesys);
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -373,6 +376,7 @@ static void syscall_close(struct intr_frame *f)
 void syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  sema_init (&sema_filesys, 1);
 }
 
 /*---------------------------------------------------------------------------------------*/
