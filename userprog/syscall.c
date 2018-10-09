@@ -13,7 +13,7 @@
 #include "devices/input.h"
 #include <string.h>
 
-struct semaphore filesys_sema;
+//struct semaphore filesys_sema;
 static void syscall_handler (struct intr_frame *);
 
 /*---------------------------------------------------------------------------------------*/
@@ -130,14 +130,17 @@ static void syscall_exec(struct intr_frame *f)
 
   sema_down(&filesys_sema);
   struct file* file = filesys_open(f_name);
-  sema_up(&filesys_sema);
 
   free(f_name);
 
   if(file == NULL){
     f->eax = -1;
+    sema_up(&filesys_sema);
     return;
   }
+
+  file_close(file);
+  sema_up(&filesys_sema);
     
   f->eax = process_execute(cmd_line);
 }
@@ -163,6 +166,7 @@ static void syscall_create(struct intr_frame *f)
   const char *file = *(char **)(f->esp+4);
   if(!is_valid_string(file))
     return error_exit();
+
   unsigned initial_size = *(unsigned *)(f->esp+8);
 
   sema_down(&filesys_sema);
@@ -310,6 +314,7 @@ static void syscall_write(struct intr_frame *f)
     return error_exit();
 
   int write_size = -1;
+ 
   /* stdout 인 경우 */
   if(fd == 1){
     sema_down(&filesys_sema);
@@ -319,8 +324,9 @@ static void syscall_write(struct intr_frame *f)
   }
   else{
     struct fd_info *fd_info = get_fd_info(fd);
-    if(fd_info == NULL)
+    if(fd_info == NULL){
       return error_exit();
+    }
     struct file* file = fd_info->file;
     if(file == NULL){
       return error_exit();

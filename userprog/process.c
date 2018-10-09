@@ -20,6 +20,7 @@
 
 #include "threads/malloc.h"
 #include "threads/synch.h"
+#include "userprog/syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -119,8 +120,11 @@ destroy_fd_infos(struct thread* t)
     f = list_entry(le, struct fd_info, elem);
 
     /* 열러 있는 파일 닫기 */
-    if(f->file != NULL)
+    if(f->file != NULL){
+      sema_down(&filesys_sema);
       file_close(f->file);
+      sema_up(&filesys_sema);
+    }
 
     /* 리스트에서 없애고 free */
     list_remove(&f->elem);
@@ -262,7 +266,9 @@ process_exit (void)
 
   if(curr->exe_file != NULL){
     file_allow_write(curr->exe_file);
+    sema_down(&filesys_sema);
     file_close(curr->exe_file);
+    sema_up(&filesys_sema);
   }
 
 
@@ -390,6 +396,8 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
+  sema_down(&filesys_sema);
+
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
@@ -505,7 +513,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
   }
 //  else
 //    file_close(file);
-
+  sema_up(&filesys_sema);
   return success;
 }
 
