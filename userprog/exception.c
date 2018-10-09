@@ -148,9 +148,9 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  /* 커널의 page fault로 인해 eax가 0xfff...로 설정, eip는 eax */
+  /* TODO 커널에 의해 page fault가 나면 eax와 eip 설정 */
   if(!user){
-    f->eip = (void *) f->eax;
+    f->eip = (void *)f->eax;
     f->eax = 0xffffffff;
     return;
   }
