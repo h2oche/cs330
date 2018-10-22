@@ -159,15 +159,22 @@ process_execute (const char *file_name)
   f_name = strtok_r (f_name, " ", &save_ptr);
 
   /* Create a new thread to execute FILE_NAME. */
+  thread_current()->child_success = false;
   tid = thread_create (f_name, PRI_DEFAULT, start_process, fn_copy);
 
   /* TODO 파일 이름 free */
   free(f_name);
 
+  /* TODO 자식 load 기다리기 */
+  sema_down(&thread_current()->load_lock);
+
   if (tid == TID_ERROR){
     palloc_free_page (fn_copy);
     return tid;
   }
+
+  if(thread_current()->child_success == false)
+    return -1;
 
   /* TODO child_info를 만들어서 저장 */
   struct child_info *c = create_child_info(tid);
@@ -196,10 +203,16 @@ start_process (void *f_name)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
 
+  struct thread* parent = thread_current()->parent;
+  parent->child_success = success;
+  sema_up(&parent->load_lock);
+
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
+  if (!success){
+//    PANIC("load\n");
     thread_exit ();
+  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
