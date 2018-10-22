@@ -88,6 +88,7 @@ destroy_children(struct thread* t)
   struct child_info *c = NULL;
   struct list_elem *le = NULL;
   struct list_elem *nle = NULL;
+  struct thread* child;
 
   for(le = list_begin(&t->children);
       le != list_end(&t->children);
@@ -95,6 +96,8 @@ destroy_children(struct thread* t)
   {
     nle = list_next(le);
     c = list_entry(le, struct child_info, elem);
+    child = tid_to_thread(c->tid);
+    child->parent = NULL;
 
     /* 리스트에서 없애고 free */
     list_remove(&c->elem);
