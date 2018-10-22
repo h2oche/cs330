@@ -510,9 +510,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
         }
     }
 
-  /* Set up stack. */
-  if (!setup_stack (esp, file_name))
+  if (strlen(file_name) > PGSIZE / 2 || !setup_stack (esp, file_name))
     goto done;
+
 
 //  hex_dump(PHYS_BASE - 0x70, PHYS_BASE - 0x70, 0x70, true);
 
