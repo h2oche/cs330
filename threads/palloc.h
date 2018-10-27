@@ -11,6 +11,14 @@ enum palloc_flags
     PAL_USER = 004              /* User page. */
   };
 
+/* A memory pool. */
+struct pool
+  {
+    struct lock lock;                   /* Mutual exclusion. */
+    struct bitmap *used_map;            /* Bitmap of free pages. */
+    uint8_t *base;                      /* Base of pool. */
+  };
+
 /* Maximum number of pages to put in user pool. */
 extern size_t user_page_limit;
 

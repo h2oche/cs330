@@ -35,6 +35,9 @@
 #include "filesys/fsutil.h"
 #endif
 
+/* VM */
+#include "vm/frametbl.h"
+
 /* Amount of physical memory, in 4 kB pages. */
 size_t ram_pages;
 
@@ -87,6 +90,9 @@ main (void)
   palloc_init ();
   malloc_init ();
   paging_init ();
+
+  /* Initialize VM system */
+  frametbl_init();
 
   /* Segmentation. */
 #ifdef USERPROG

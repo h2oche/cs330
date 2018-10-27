@@ -9,6 +9,10 @@ userprog/build/
 userprog/bochsout.txt
 userprog/bochsrc.txt
 
+vm/build/
+vm/bochsout.txt
+vm/bochsrc.txt
+
 sftp-config.json
 
 bochs/
@@ -18,4 +22,3 @@ lib/
 misc/
 tests/
 utils/
-vm/

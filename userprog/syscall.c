@@ -125,6 +125,7 @@ static void syscall_exec(struct intr_frame *f)
   /* TODO 파일 이름 파싱 -> 유효한 파일인 지 확인  */
   char *save_ptr;
   char *f_name = malloc(strlen(cmd_line)+1);
+  // if(f_name == NULL)
   strlcpy (f_name, cmd_line, strlen(cmd_line)+1);
   f_name = strtok_r (f_name, " ", &save_ptr);
 
@@ -214,6 +215,7 @@ static void syscall_open(struct intr_frame *f)
   }
 
   struct fd_info* pfd_info = malloc(sizeof(struct fd_info));
+  //if(pfd_info == NULL)
   pfd_info->fd = thread_current()->next_fd;
   thread_current()->next_fd++;
   pfd_info->file = open_file;
