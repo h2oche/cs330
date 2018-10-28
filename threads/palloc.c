@@ -12,6 +12,9 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 
+/* VM */
+#include "vm/frametbl.h"
+
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
    hands out smaller chunks.
@@ -161,6 +164,7 @@ init_pool (struct pool *p, void *base, size_t page_cnt, const char *name)
   page_cnt -= bm_pages;
 
   printf ("%zu pages available in %s.\n", page_cnt, name);
+  frame_max_cnt = page_cnt;
 
   /* Initialize the pool. */
   lock_init (&p->lock);

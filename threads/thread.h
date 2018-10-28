@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include <hash.h>
 #include "threads/synch.h"
 
 /* States in a thread's life cycle. */
@@ -105,11 +106,13 @@ struct thread
 
     struct list_elem thread_list_elem;
 
-
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
 #endif
+
+    /* VM */
+    struct hash spagetbl;
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */

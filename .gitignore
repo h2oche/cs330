@@ -18,7 +18,6 @@ sftp-config.json
 bochs/
 examples/
 filesys/
-lib/
 misc/
 tests/
 utils/

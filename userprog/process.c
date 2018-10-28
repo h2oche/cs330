@@ -22,6 +22,10 @@
 #include "threads/synch.h"
 #include "userprog/syscall.h"
 
+/* VM */
+#include "vm/frametbl.h" 
+#include "vm/spagetbl.h"
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -158,6 +162,7 @@ process_execute (const char *file_name)
   /* TODO 파일 이름 파싱 - thread name으로 사용 */
   char *save_ptr;
   char *f_name = malloc(strlen(file_name)+1);
+  //if(f_name == NULL)
   strlcpy (f_name, file_name, strlen(file_name)+1);
   f_name = strtok_r (f_name, " ", &save_ptr);
 
@@ -305,6 +310,10 @@ process_exit (void)
       pagedir_destroy (pd);
     }
 
+  /* Destroy supplementary hash table */
+  if( &curr->spagetbl != NULL)
+    hash_destroy(&curr->spagetbl, NULL);
+
   /* TODO parent가 가지고 있는 child_info 업데이트 */
    if(c!=NULL){
     c->is_alive = false;
@@ -420,9 +429,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  /* init supplementary hash table */
+  hash_init(&t->spagetbl, spagetbl_hash_func, spagetbl_hash_less_func, NULL);
+
   /* TODO 파일 이름 파싱 - open 위해서 */
   char *save_ptr;
   char *fn_copy = malloc(strlen(file_name)+1);
+  //if(fn_copy == NULL)
   strlcpy(fn_copy, file_name, strlen(file_name)+1);
   fn_copy = strtok_r(fn_copy, " ", &save_ptr);
 
@@ -614,14 +627,16 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
+      // uint8_t *kpage = palloc_get_page (PAL_USER);
+      uint8_t *kpage = frametbl_get_frame();
+      
       if (kpage == NULL)
         return false;
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          palloc_free_page (kpage);
+          frametbl_free_frame (kpage);
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -629,7 +644,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
         {
-          palloc_free_page (kpage);
+          frametbl_free_frame (kpage);
           return false; 
         }
 
@@ -649,14 +664,15 @@ setup_stack (void **esp, const char *file_name)
   uint8_t *kpage;
   bool success = false;
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  // kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  kpage = frametbl_get_frame();
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
         *esp = PHYS_BASE;
       else
-        palloc_free_page (kpage);
+        frametbl_free_frame (kpage);
     }
 
   /* TODO 파싱해서 스택에 넣기 */

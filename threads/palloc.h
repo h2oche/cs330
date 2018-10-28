@@ -2,6 +2,7 @@
 #define THREADS_PALLOC_H
 
 #include <stddef.h>
+#include "threads/synch.h"
 
 /* How to allocate pages. */
 enum palloc_flags
@@ -21,6 +22,7 @@ struct pool
 
 /* Maximum number of pages to put in user pool. */
 extern size_t user_page_limit;
+extern struct pool user_pool;
 
 void palloc_init (void);
 void *palloc_get_page (enum palloc_flags);
