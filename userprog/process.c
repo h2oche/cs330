@@ -311,8 +311,16 @@ process_exit (void)
     }
 
   /* Destroy supplementary hash table */
-  if( &curr->spagetbl != NULL)
-    hash_destroy(&curr->spagetbl, NULL);
+  if( &curr->spagetbl != NULL) {
+    while(hash_size(&curr->spagetbl) > 0) {
+      struct hash_iterator i;
+      hash_first(&i, &curr->spagetbl);
+      hash_next(&i);
+      struct spage_table_entry* spte = hash_entry(hash_cur(&i), struct spage_table_entry, elem);
+      hash_delete(&curr->spagetbl, hash_cur(&i));
+      if(spte!=NULL) free(spte);
+    }
+  }
 
   /* TODO parent가 가지고 있는 child_info 업데이트 */
    if(c!=NULL){
@@ -622,7 +630,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      struct spage_table_entry* spte = (struct spage_table_entry*)calloc(1, sizeof(struct spage_table_entry));
+      struct spage_table_entry* spte = (struct spage_table_entry*)malloc(sizeof(struct spage_table_entry));
       spte->vaddr = upage;
       spte->offset = ofs;
       spte->read_bytes = page_read_bytes;

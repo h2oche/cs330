@@ -180,12 +180,12 @@ page_fault (struct intr_frame *f)
 
     spte_needle.vaddr = fault_addr_page;
     e = hash_find(&thread_current()->spagetbl, &spte_needle.elem);
-    if(e == NULL) goto done;
+    if(e == NULL) goto STACK_GROWTH;
     struct spage_table_entry* spte = hash_entry(e, struct spage_table_entry, elem);
 
     if(spte->storage == SPG_FILESYS) {
       uint8_t *frame = frametbl_get_frame();
-      if(frame == NULL) goto done;
+      if(frame == NULL) goto DONE;
 
       sema_down(&filesys_sema);
       file_seek(thread_current()->exe_file, spte->offset);
@@ -193,71 +193,36 @@ page_fault (struct intr_frame *f)
       {
         sema_up(&filesys_sema);
         frametbl_free_frame(frame);
-        goto done;
+        goto DONE;
       }
       sema_up(&filesys_sema);
       memset(frame + spte->read_bytes, 0, spte->zero_bytes);
 
       //install page
-      if(pagedir_get_page (thread_current()->pagedir, fault_addr_page) != NULL) goto done;
+      if(pagedir_get_page (thread_current()->pagedir, fault_addr_page) != NULL) goto DONE;
       pagedir_set_page (thread_current()->pagedir, fault_addr_page, frame, spte->writable);
       spte->storage = SPG_MEMORY;
-      // f->eip = (void *)fault_addr;
       return;
-      // PANIC("lazy loading");
-      // file_seek (file, ofs);
-      // while (read_bytes > 0 || zero_bytes > 0) 
-      //   {
-      //     /* Do calculate how to fill this page.
-      //        We will read PAGE_READ_BYTES bytes from FILE
-      //        and zero the final PAGE_ZERO_BYTES bytes. */
-      //     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-      //     size_t page_zero_bytes = PGSIZE - page_read_bytes;
-
-      //     /* Get a page of memory. */
-      //     // uint8_t *kpage = palloc_get_page (PAL_USER);
-      //     uint8_t *kpage = frametbl_get_frame();
-          
-      //     if (kpage == NULL)
-      //       return false;
-
-      //     /* Load this page. */
-      //     if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-      //       {
-      //         frametbl_free_frame (kpage);
-      //         return false; 
-      //       }
-      //     memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      //     /* Add the page to the process's address space. */
-      //     if (!install_page (upage, kpage, writable)) 
-      //       {
-      //         frametbl_free_frame (kpage);
-      //         return false; 
-      //       }
-
-      //     /* Advance. */
-      //     read_bytes -= page_read_bytes;
-      //     zero_bytes -= page_zero_bytes;
-      //     upage += PGSIZE;
-      //   }
     }
     else if(spte->storage == SPG_ZERO) {
       uint8_t *frame = frametbl_get_frame();
-      if(frame == NULL) goto done;
+      if(frame == NULL) goto DONE;
       //install page
-      if(pagedir_get_page (thread_current()->pagedir, fault_addr_page) != NULL) goto done;
+      if(pagedir_get_page (thread_current()->pagedir, fault_addr_page) != NULL) goto DONE;
       pagedir_set_page (thread_current()->pagedir, fault_addr_page, frame, spte->writable);
       spte->storage = SPG_MEMORY;
-      // f->eip = (void *)fault_addr;
       return;
     }
     else if(spte->storage == SPG_SWAP) {
 
     }
   }
+  PANIC("not reachable section!!");
 
-  done:
+  STACK_GROWTH:
+  PANIC("do something!!");
+
+  DONE:
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
