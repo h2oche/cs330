@@ -1,9 +1,17 @@
 #include "userprog/exception.h"
 #include <inttypes.h>
 #include <stdio.h>
+#include <hash.h>
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
+#include "userprog/syscall.h"
+#include "userprog/pagedir.h"
+
+/* VM */
+#include "vm/spagetbl.h"
+#include "vm/frametbl.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -126,6 +134,7 @@ page_fault (struct intr_frame *f)
   bool write;        /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
+  void *fault_addr_page;
 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
@@ -135,6 +144,7 @@ page_fault (struct intr_frame *f)
      [IA32-v3a] 5.15 "Interrupt 14--Page Fault Exception
      (#PF)". */
   asm ("movl %%cr2, %0" : "=r" (fault_addr));
+  fault_addr_page = pg_round_down(fault_addr);
 
   /* Turn interrupts back on (they were only off so that we could
      be assured of reading CR2 before it changed). */
@@ -153,8 +163,101 @@ page_fault (struct intr_frame *f)
     f->eip = (void *)f->eax;
     f->eax = 0xffffffff;
     return;
+  } else {
+    /* debug */
+    // struct hash_iterator i;
+    // hash_first(&i, &thread_current()->spagetbl);
+    // printf("-------------------------------------------\n");
+    // printf("fault addr : 0x%x\n", fault_addr);
+    // while(hash_next(&i)) {
+    //   struct spage_table_entry* spte = hash_entry(hash_cur(&i), struct spage_table_entry, elem);
+    //   printf("0x%0x %d %d %d %d\n", spte->vaddr, spte->storage, spte->read_bytes, spte->zero_bytes, spte->writable);
+    // }
+    // printf("-------------------------------------------\n");
+
+    struct spage_table_entry spte_needle;
+    struct hash_elem *e;
+
+    spte_needle.vaddr = fault_addr_page;
+    e = hash_find(&thread_current()->spagetbl, &spte_needle.elem);
+    if(e == NULL) goto done;
+    struct spage_table_entry* spte = hash_entry(e, struct spage_table_entry, elem);
+
+    if(spte->storage == SPG_FILESYS) {
+      uint8_t *frame = frametbl_get_frame();
+      if(frame == NULL) goto done;
+
+      sema_down(&filesys_sema);
+      file_seek(thread_current()->exe_file, spte->offset);
+      if(file_read(thread_current()->exe_file, frame, spte->read_bytes) != (int)spte->read_bytes)
+      {
+        sema_up(&filesys_sema);
+        frametbl_free_frame(frame);
+        goto done;
+      }
+      sema_up(&filesys_sema);
+      memset(frame + spte->read_bytes, 0, spte->zero_bytes);
+
+      //install page
+      if(pagedir_get_page (thread_current()->pagedir, fault_addr_page) != NULL) goto done;
+      pagedir_set_page (thread_current()->pagedir, fault_addr_page, frame, spte->writable);
+      spte->storage = SPG_MEMORY;
+      // f->eip = (void *)fault_addr;
+      return;
+      // PANIC("lazy loading");
+      // file_seek (file, ofs);
+      // while (read_bytes > 0 || zero_bytes > 0) 
+      //   {
+      //     /* Do calculate how to fill this page.
+      //        We will read PAGE_READ_BYTES bytes from FILE
+      //        and zero the final PAGE_ZERO_BYTES bytes. */
+      //     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+      //     size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+      //     /* Get a page of memory. */
+      //     // uint8_t *kpage = palloc_get_page (PAL_USER);
+      //     uint8_t *kpage = frametbl_get_frame();
+          
+      //     if (kpage == NULL)
+      //       return false;
+
+      //     /* Load this page. */
+      //     if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+      //       {
+      //         frametbl_free_frame (kpage);
+      //         return false; 
+      //       }
+      //     memset (kpage + page_read_bytes, 0, page_zero_bytes);
+
+      //     /* Add the page to the process's address space. */
+      //     if (!install_page (upage, kpage, writable)) 
+      //       {
+      //         frametbl_free_frame (kpage);
+      //         return false; 
+      //       }
+
+      //     /* Advance. */
+      //     read_bytes -= page_read_bytes;
+      //     zero_bytes -= page_zero_bytes;
+      //     upage += PGSIZE;
+      //   }
+    }
+    else if(spte->storage == SPG_ZERO) {
+      uint8_t *frame = frametbl_get_frame();
+      if(frame == NULL) goto done;
+      //install page
+      if(pagedir_get_page (thread_current()->pagedir, fault_addr_page) != NULL) goto done;
+      pagedir_set_page (thread_current()->pagedir, fault_addr_page, frame, spte->writable);
+      spte->storage = SPG_MEMORY;
+      // f->eip = (void *)fault_addr;
+      return;
+    }
+    else if(spte->storage == SPG_SWAP) {
+
+    }
   }
 
+  done:
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */

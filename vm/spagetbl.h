@@ -18,8 +18,11 @@ struct spage_table_entry {
     struct hash_elem elem;          /* Hash element */
 
     enum spte_flags storage;       /* 저장된 곳의 위치 */
-    void* pos;                      /* 저장된 곳에서의 주소 */
-    bool presented;                 /* 유효한 spage_table_entry 인지 */
+    
+    uint32_t offset;
+    uint32_t read_bytes;
+    uint32_t zero_bytes;
+    bool writable;
 };
 
 void spagetbl_create(void);

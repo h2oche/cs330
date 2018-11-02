@@ -617,42 +617,63 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
-  file_seek (file, ofs);
-  while (read_bytes > 0 || zero_bytes > 0) 
+  while( read_bytes > 0 || zero_bytes > 0 )
     {
-      /* Do calculate how to fill this page.
-         We will read PAGE_READ_BYTES bytes from FILE
-         and zero the final PAGE_ZERO_BYTES bytes. */
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      // uint8_t *kpage = palloc_get_page (PAL_USER);
-      uint8_t *kpage = frametbl_get_frame();
-      
-      if (kpage == NULL)
-        return false;
-
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          frametbl_free_frame (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          frametbl_free_frame (kpage);
-          return false; 
-        }
+      struct spage_table_entry* spte = (struct spage_table_entry*)calloc(1, sizeof(struct spage_table_entry));
+      spte->vaddr = upage;
+      spte->offset = ofs;
+      spte->read_bytes = page_read_bytes;
+      spte->zero_bytes = page_zero_bytes;
+      spte->writable = writable;
+      spte->storage = page_read_bytes == 0 ? SPG_ZERO : SPG_FILESYS;
+      hash_insert(&thread_current()->spagetbl, &spte->elem);
 
       /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
+      ofs += page_read_bytes;
       upage += PGSIZE;
     }
+
+  // file_seek (file, ofs);
+  // while (read_bytes > 0 || zero_bytes > 0) 
+  //   {
+  //     /* Do calculate how to fill this page.
+  //        We will read PAGE_READ_BYTES bytes from FILE
+  //        and zero the final PAGE_ZERO_BYTES bytes. */
+  //     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+  //     size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+  //     /* Get a page of memory. */
+  //     // uint8_t *kpage = palloc_get_page (PAL_USER);
+  //     uint8_t *kpage = frametbl_get_frame();
+      
+  //     if (kpage == NULL)
+  //       return false;
+
+  //     /* Load this page. */
+  //     if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+  //       {
+  //         frametbl_free_frame (kpage);
+  //         return false; 
+  //       }
+  //     memset (kpage + page_read_bytes, 0, page_zero_bytes);
+
+  //     /* Add the page to the process's address space. */
+  //     if (!install_page (upage, kpage, writable)) 
+  //       {
+  //         frametbl_free_frame (kpage);
+  //         return false; 
+  //       }
+
+  //     /* Advance. */
+  //     read_bytes -= page_read_bytes;
+  //     zero_bytes -= page_zero_bytes;
+  //     upage += PGSIZE;
+  //   }
   return true;
 }
 
@@ -669,6 +690,13 @@ setup_stack (void **esp, const char *file_name)
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+
+      struct spage_table_entry* spte = (struct spage_table_entry*)calloc(1, sizeof(struct spage_table_entry));
+      spte->vaddr = ((uint8_t *) PHYS_BASE) - PGSIZE;
+      spte->writable = true;
+      spte->storage = SPG_MEMORY;
+      hash_insert(&thread_current()->spagetbl, &spte->elem);
+
       if (success)
         *esp = PHYS_BASE;
       else
@@ -764,7 +792,7 @@ install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
 
-  printf("test\n");
+  // printf("test\n");
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
