@@ -23,11 +23,14 @@ struct spage_table_entry {
     uint32_t read_bytes;
     uint32_t zero_bytes;
     bool writable;
+    size_t swap_sec_no;
 };
 
 void spagetbl_create(void);
 void spagetbl_destroy(void);
 unsigned spagetbl_hash_func(const struct hash_elem*, void *);
 bool spagetbl_hash_less_func(const struct hash_elem*, const struct hash_elem*, void*);
+struct spage_table_entry* spagetbl_get_spte(void *);
+bool spagetbl_load(struct spage_table_entry*);
 
 #endif

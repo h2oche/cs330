@@ -548,8 +548,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
     t->exe_file = file;
     file_deny_write(file);
   }
-//  else
-//    file_close(file);
   sema_up(&filesys_sema);
   return success;
 }
@@ -625,18 +623,22 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
+  file_seek (file, ofs);
   while( read_bytes > 0 || zero_bytes > 0 )
     {
+      /* TODO spage_table_entry 만들어서 insert */
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       struct spage_table_entry* spte = (struct spage_table_entry*)malloc(sizeof(struct spage_table_entry));
+      if(spte == NULL)
+        return false;
       spte->vaddr = upage;
       spte->offset = ofs;
       spte->read_bytes = page_read_bytes;
       spte->zero_bytes = page_zero_bytes;
       spte->writable = writable;
-      spte->storage = page_read_bytes == 0 ? SPG_ZERO : SPG_FILESYS;
+      spte->storage = SPG_FILESYS; //page_read_bytes == 0 ? SPG_ZERO : SPG_FILESYS; -> 0인 경우는 while문 통과 못함.
       hash_insert(&thread_current()->spagetbl, &spte->elem);
 
       /* Advance. */
@@ -646,43 +648,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       upage += PGSIZE;
     }
 
-  // file_seek (file, ofs);
-  // while (read_bytes > 0 || zero_bytes > 0) 
-  //   {
-  //     /* Do calculate how to fill this page.
-  //        We will read PAGE_READ_BYTES bytes from FILE
-  //        and zero the final PAGE_ZERO_BYTES bytes. */
-  //     size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-  //     size_t page_zero_bytes = PGSIZE - page_read_bytes;
-
-  //     /* Get a page of memory. */
-  //     // uint8_t *kpage = palloc_get_page (PAL_USER);
-  //     uint8_t *kpage = frametbl_get_frame();
-      
-  //     if (kpage == NULL)
-  //       return false;
-
-  //     /* Load this page. */
-  //     if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-  //       {
-  //         frametbl_free_frame (kpage);
-  //         return false; 
-  //       }
-  //     memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-  //     /* Add the page to the process's address space. */
-  //     if (!install_page (upage, kpage, writable)) 
-  //       {
-  //         frametbl_free_frame (kpage);
-  //         return false; 
-  //       }
-
-  //     /* Advance. */
-  //     read_bytes -= page_read_bytes;
-  //     zero_bytes -= page_zero_bytes;
-  //     upage += PGSIZE;
-  //   }
   return true;
+
 }
 
 /* Create a minimal stack by mapping a zeroed page at the top of
@@ -693,23 +660,25 @@ setup_stack (void **esp, const char *file_name)
   uint8_t *kpage;
   bool success = false;
 
-  // kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  kpage = frametbl_get_frame();
-  if (kpage != NULL) 
-    {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+  kpage = frametbl_get_frame(PAL_USER|PAL_ZERO, PHYS_BASE-PGSIZE);
 
-      struct spage_table_entry* spte = (struct spage_table_entry*)calloc(1, sizeof(struct spage_table_entry));
-      spte->vaddr = ((uint8_t *) PHYS_BASE) - PGSIZE;
-      spte->writable = true;
-      spte->storage = SPG_MEMORY;
-      hash_insert(&thread_current()->spagetbl, &spte->elem);
+  if (kpage != NULL){
+    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
 
-      if (success)
-        *esp = PHYS_BASE;
-      else
-        frametbl_free_frame (kpage);
+    if(!success){
+      frametbl_free_frame (kpage);
+      return false;
     }
+
+    /* TODO spage_table_entry 만들어서 insert */
+    struct spage_table_entry* spte = (struct spage_table_entry*)malloc(sizeof(struct spage_table_entry));
+    spte->vaddr = ((uint8_t *) PHYS_BASE) - PGSIZE;
+    spte->writable = true;
+    spte->storage = SPG_MEMORY;
+    hash_insert(&thread_current()->spagetbl, &spte->elem);
+
+    *esp = PHYS_BASE;
+  }
 
   /* TODO 파싱해서 스택에 넣기 */
   char *token, *save_ptr;

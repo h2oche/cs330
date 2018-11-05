@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <list.h>
 #include "threads/vaddr.h"
+#include "threads/palloc.h"
 
 #define FT_INDEX(KPAGE, BASE) ((uint32_t)((KPAGE) - (uintptr_t)(BASE))) >> PGBITS
 
@@ -13,10 +14,12 @@ extern size_t frame_max_cnt;
 struct frame_table_entry {
     bool presented;
     void* frame;
+    uint32_t *pagedir;
+    void* vaddr;
 };
 
 void frametbl_init(void); 
-void* frametbl_get_frame(void);
+void* frametbl_get_frame(enum palloc_flags, void *);
 void frametbl_free_frame(void*);
 
 #endif

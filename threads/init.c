@@ -23,6 +23,7 @@
 
 /* VM */
 #include "vm/frametbl.h"
+#include "vm/swap.h"
 
 #ifdef USERPROG
 #include "userprog/process.h"
@@ -94,6 +95,7 @@ main (void)
 
   /* Initialize VM system */
   frametbl_init();
+  swap_init();
 
   /* Segmentation. */
 #ifdef USERPROG

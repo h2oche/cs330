@@ -8,10 +8,13 @@
 #include "threads/vaddr.h"
 #include "userprog/syscall.h"
 #include "userprog/pagedir.h"
+#include "threads/malloc.h"
 
 /* VM */
 #include "vm/spagetbl.h"
 #include "vm/frametbl.h"
+
+#define STACK_LIMIT 8388608 //8MB
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -158,12 +161,15 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+  struct spage_table_entry* spte = NULL;
+
   /* TODO 커널에 의해 page fault가 나면 eax와 eip 설정 */
   if(!user){
     f->eip = (void *)f->eax;
     f->eax = 0xffffffff;
     return;
-  } else {
+  } 
+  else {
     /* debug */
     // struct hash_iterator i;
     // hash_first(&i, &thread_current()->spagetbl);
@@ -175,54 +181,36 @@ page_fault (struct intr_frame *f)
     // }
     // printf("-------------------------------------------\n");
 
-    struct spage_table_entry spte_needle;
-    struct hash_elem *e;
+    if(not_present)
+      goto FAIL;
 
-    spte_needle.vaddr = fault_addr_page;
-    e = hash_find(&thread_current()->spagetbl, &spte_needle.elem);
-    if(e == NULL) goto STACK_GROWTH;
-    struct spage_table_entry* spte = hash_entry(e, struct spage_table_entry, elem);
+    spte = spagetbl_get_spte(fault_addr);
+    if(spte == NULL) goto STACK_GROWTH;
 
-    if(spte->storage == SPG_FILESYS) {
-      uint8_t *frame = frametbl_get_frame();
-      if(frame == NULL) goto DONE;
-
-      sema_down(&filesys_sema);
-      file_seek(thread_current()->exe_file, spte->offset);
-      if(file_read(thread_current()->exe_file, frame, spte->read_bytes) != (int)spte->read_bytes)
-      {
-        sema_up(&filesys_sema);
-        frametbl_free_frame(frame);
-        goto DONE;
-      }
-      sema_up(&filesys_sema);
-      memset(frame + spte->read_bytes, 0, spte->zero_bytes);
-
-      //install page
-      if(pagedir_get_page (thread_current()->pagedir, fault_addr_page) != NULL) goto DONE;
-      pagedir_set_page (thread_current()->pagedir, fault_addr_page, frame, spte->writable);
-      spte->storage = SPG_MEMORY;
-      return;
-    }
-    else if(spte->storage == SPG_ZERO) {
-      uint8_t *frame = frametbl_get_frame();
-      if(frame == NULL) goto DONE;
-      //install page
-      if(pagedir_get_page (thread_current()->pagedir, fault_addr_page) != NULL) goto DONE;
-      pagedir_set_page (thread_current()->pagedir, fault_addr_page, frame, spte->writable);
-      spte->storage = SPG_MEMORY;
-      return;
-    }
-    else if(spte->storage == SPG_SWAP) {
-
-    }
+    if(spagetbl_load(spte))
+      goto FAIL;
+    spte->storage = SPG_MEMORY;
+    return;
   }
+
   PANIC("not reachable section!!");
 
   STACK_GROWTH:
-  PANIC("do something!!");
+  if(f->esp <= fault_addr || f->esp-4==fault_addr || f->esp-32 == fault_addr)
+    if(PHYS_BASE - STACK_LIMIT <= fault_addr && PHYS_BASE > fault_addr){
+      spte = (struct spage_table_entry *)malloc(sizeof(struct spage_table_entry));
+//      if(spte == NULL) ??
+      spte->vaddr = fault_addr_page;
+      spte->storage = SPG_ZERO;
+      spte->offset = 0;
+      spte->read_bytes = 0;
+      spte->zero_bytes = PGSIZE;
+      spte->writable = true;
+      hash_insert(&thread_current()->spagetbl, &spte->elem);
+    }
+  return;
 
-  DONE:
+  FAIL:
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
