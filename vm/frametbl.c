@@ -4,6 +4,7 @@
 #include "threads/synch.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <bitmap.h>
 #include "threads/malloc.h"
 #include "vm/swap.h"
 #include "vm/spagetbl.h"
@@ -20,6 +21,7 @@ size_t frame_search = 0;
 
 size_t search_idx (void);
 size_t frametbl_index (void*);
+
 
 /*---------------------------------------------------------------------------------------*/
 /* circular queue 처럼 만들기 위해서 */
@@ -46,8 +48,10 @@ frametbl_init(void)
     size_t i;
 
     lock_init(&frametbl_lock);
+    frame_max_cnt = bitmap_size (user_pool.used_map);
+    printf("cnt: %u\n", frame_max_cnt);
     frame_left_cnt = frame_max_cnt;
-    frame_table = (struct frame_table_entry*)calloc(sizeof(struct frame_table_entry), frame_max_cnt);
+    frame_table = (struct frame_table_entry*)calloc(10, sizeof(struct frame_table_entry));
     if(frame_table == NULL) PANIC("frametbl_init error");
 
     printf("%d frame table entries initialized\n", frame_max_cnt);
@@ -70,6 +74,7 @@ frametbl_get_frame(enum palloc_flags flags, void *vaddr)
 
     if(frame_left_cnt == 0){
       /* user pool이 다 찬 경우  */
+//PANIC("QQQ");
       while(true){
         fte = &frame_table[search_idx()];
         if(pagedir_is_accessed(fte->pagedir, fte->vaddr))
@@ -92,6 +97,8 @@ frametbl_get_frame(enum palloc_flags flags, void *vaddr)
         2. palloc_get_page : DONE
         3. update frametbl(synch) : DONE       */
 
+//PANIC("AAA");
+
     frame_left_cnt--;
     lock_release(&frametbl_lock);
 
@@ -107,6 +114,8 @@ frametbl_get_frame(enum palloc_flags flags, void *vaddr)
     fte->vaddr = vaddr;
       
     lock_release(&frametbl_lock);
+
+//PANIC("ZZZ");
     return kpage;
 
 }

@@ -41,6 +41,8 @@ spagetbl_get_spte(void *vaddr)
   struct spage_table_entry spte;
   struct hash_elem* e = NULL;
 
+  PANIC("SPAGE_TBL_ENTRY");
+
   spte.vaddr = pg_round_down(vaddr);
   if((e=hash_find(&thread_current()->spagetbl, &spte.elem)) == NULL)
     return NULL; // 없는 경우
@@ -53,6 +55,8 @@ bool
 spagetbl_load(struct spage_table_entry* spte)
 {
   uint8_t *frame = NULL;
+
+  PANIC("SPTBL_LOAD");
 
   switch(spte->storage){
     case SPG_FILESYS:

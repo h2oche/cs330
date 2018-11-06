@@ -190,6 +190,7 @@ process_execute (const char *file_name)
     palloc_free_page (fn_copy);
     return TID_ERROR;
   }
+
   list_push_back(&thread_current()->children, &c->elem);
 
   return tid;
@@ -218,7 +219,6 @@ start_process (void *f_name)
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success){
-//    PANIC("load\n");
     thread_exit ();
   }
 
@@ -661,7 +661,6 @@ setup_stack (void **esp, const char *file_name)
   bool success = false;
 
   kpage = frametbl_get_frame(PAL_USER|PAL_ZERO, PHYS_BASE-PGSIZE);
-
   if (kpage != NULL){
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
 
@@ -768,8 +767,6 @@ static bool
 install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
-
-  // printf("test\n");
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */

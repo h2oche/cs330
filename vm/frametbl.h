@@ -3,13 +3,11 @@
 
 #include <stddef.h>
 #include <stdbool.h>
-#include <list.h>
+//#include <list.h>
 #include "threads/vaddr.h"
 #include "threads/palloc.h"
 
 #define FT_INDEX(KPAGE, BASE) ((uint32_t)((KPAGE) - (uintptr_t)(BASE))) >> PGBITS
-
-extern size_t frame_max_cnt;
 
 struct frame_table_entry {
     bool presented;

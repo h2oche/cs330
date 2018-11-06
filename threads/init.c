@@ -21,7 +21,6 @@
 #include "threads/pte.h"
 #include "threads/thread.h"
 
-/* VM */
 #include "vm/frametbl.h"
 #include "vm/swap.h"
 
@@ -93,10 +92,6 @@ main (void)
   malloc_init ();
   paging_init ();
 
-  /* Initialize VM system */
-  frametbl_init();
-  swap_init();
-
   /* Segmentation. */
 #ifdef USERPROG
   tss_init ();
@@ -123,6 +118,10 @@ main (void)
   disk_init ();
   filesys_init (format_filesys);
 #endif
+
+  /* Initialize VM system */
+  frametbl_init();
+  swap_init();
 
   printf ("Boot complete.\n");
   

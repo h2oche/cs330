@@ -181,8 +181,10 @@ page_fault (struct intr_frame *f)
     // }
     // printf("-------------------------------------------\n");
 
-    if(not_present)
+    if(not_present){
+      printf("not_present");
       goto FAIL;
+    }
 
     spte = spagetbl_get_spte(fault_addr);
     if(spte == NULL) goto STACK_GROWTH;
@@ -196,6 +198,7 @@ page_fault (struct intr_frame *f)
   PANIC("not reachable section!!");
 
   STACK_GROWTH:
+  printf("stack growth\n");
   if(f->esp <= fault_addr || f->esp-4==fault_addr || f->esp-32 == fault_addr)
     if(PHYS_BASE - STACK_LIMIT <= fault_addr && PHYS_BASE > fault_addr){
       spte = (struct spage_table_entry *)malloc(sizeof(struct spage_table_entry));
