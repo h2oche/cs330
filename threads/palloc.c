@@ -164,7 +164,6 @@ init_pool (struct pool *p, void *base, size_t page_cnt, const char *name)
   page_cnt -= bm_pages;
 
   printf ("%zu pages available in %s.\n", page_cnt, name);
-  frame_max_cnt = page_cnt;
 
   /* Initialize the pool. */
   lock_init (&p->lock);
