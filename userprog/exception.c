@@ -169,49 +169,28 @@ page_fault (struct intr_frame *f)
     f->eax = 0xffffffff;
     return;
   } 
-  else {
-    /* debug */
-    // struct hash_iterator i;
-    // hash_first(&i, &thread_current()->spagetbl);
-    // printf("-------------------------------------------\n");
-    // printf("fault addr : 0x%x\n", fault_addr);
-    // while(hash_next(&i)) {
-    //   struct spage_table_entry* spte = hash_entry(hash_cur(&i), struct spage_table_entry, elem);
-    //   printf("0x%0x %d %d %d %d\n", spte->vaddr, spte->storage, spte->read_bytes, spte->zero_bytes, spte->writable);
-    // }
-    // printf("-------------------------------------------\n");
 
-    if(not_present){
-      printf("not_present");
-      goto FAIL;
+  /* TODO 1) 제대로 접근
+          2) 스택 주소에 해당(PHYS_BASE - STAK_LIMIT < fault_addr <= PHYS_BASE) 하는 경우
+
+          case 1) spte가 존재하면, page가 memory에 올려져있지 않아서 발생한 page fault.
+                    =>  로드
+          case 2) spte가 존재하지 않으면, 추가적인 페이지가 필요해서 발생한 page fault.
+                    => stack 증가
+  */
+  if(not_present && fault_addr < PHYS_BASE && fault_addr >= PHYS_BASE - STACK_LIMIT){
+    if((spte = spagetbl_get_spte(fault_addr)) == NULL){
+      if(!spagetbl_stack_grow(fault_addr_page))
+        goto FAIL;
+      return;
     }
-
-    spte = spagetbl_get_spte(fault_addr);
-    if(spte == NULL) goto STACK_GROWTH;
-
-    if(spagetbl_load(spte))
-      goto FAIL;
-    spte->storage = SPG_MEMORY;
-    return;
+    else{
+      if(!spagetbl_load(spte))
+        goto FAIL;
+      spte->storage = SPG_MEMORY;
+      return;
+    }
   }
-
-  PANIC("not reachable section!!");
-
-  STACK_GROWTH:
-  printf("stack growth\n");
-  if(f->esp <= fault_addr || f->esp-4==fault_addr || f->esp-32 == fault_addr)
-    if(PHYS_BASE - STACK_LIMIT <= fault_addr && PHYS_BASE > fault_addr){
-      spte = (struct spage_table_entry *)malloc(sizeof(struct spage_table_entry));
-//      if(spte == NULL) ??
-      spte->vaddr = fault_addr_page;
-      spte->storage = SPG_ZERO;
-      spte->offset = 0;
-      spte->read_bytes = 0;
-      spte->zero_bytes = PGSIZE;
-      spte->writable = true;
-      hash_insert(&thread_current()->spagetbl, &spte->elem);
-    }
-  return;
 
   FAIL:
   /* To implement virtual memory, delete the rest of the function
@@ -223,5 +202,6 @@ page_fault (struct intr_frame *f)
           write ? "writing" : "reading",
           user ? "user" : "kernel");
   kill (f);
+  return;
 }
 

@@ -49,12 +49,12 @@ frametbl_init(void)
 
     lock_init(&frametbl_lock);
     frame_max_cnt = bitmap_size (user_pool.used_map);
-    printf("cnt: %u\n", frame_max_cnt);
+//    printf("cnt: %u\n", frame_max_cnt);
     frame_left_cnt = frame_max_cnt;
-    frame_table = (struct frame_table_entry*)calloc(10, sizeof(struct frame_table_entry));
+    frame_table = (struct frame_table_entry*)calloc(frame_max_cnt, sizeof(struct frame_table_entry));
     if(frame_table == NULL) PANIC("frametbl_init error");
 
-    printf("%d frame table entries initialized\n", frame_max_cnt);
+//    printf("%d frame table entries initialized\n", frame_max_cnt);
 
     for(i = 0 ; i < frame_max_cnt ; i += 1) {
         frame_table[i].presented = false;

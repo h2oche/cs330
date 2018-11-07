@@ -8,7 +8,7 @@
 
 struct disk* swap_disk;
 struct lock swap_lock;
-struct bitmap* swap_bitmap;
+struct bitmap* swap_table;
 
 void swap_init(void);
 
@@ -18,7 +18,7 @@ void swap_init(void)
 
   swap_disk = disk_get(1,1);
   lock_init(&swap_lock);
-  swap_bitmap = bitmap_create(disk_size(swap_disk));
+  swap_table = bitmap_create(disk_size(swap_disk));
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -29,7 +29,7 @@ size_t swap_out(void *frame)
   lock_acquire(&swap_lock);
 
   /* TODO 비어있는 부분 찾아서 page 복사해서 넣기 */
-  size_t sec_no = bitmap_scan_and_flip(swap_bitmap, 0, PAGE_SECTOR_NUM, 0);
+  size_t sec_no = bitmap_scan_and_flip(swap_table, 0, PAGE_SECTOR_NUM, 0);
   size_t i;
 
   if(sec_no == BITMAP_ERROR)
@@ -57,7 +57,7 @@ void swap_in(size_t sec_no, void *frame)
     disk_read(swap_disk, sec_no+i, frame+i*DISK_SECTOR_SIZE);
   }
 
-  bitmap_set_multiple(swap_bitmap, sec_no, PAGE_SECTOR_NUM, 0);
+  bitmap_set_multiple(swap_table, sec_no, PAGE_SECTOR_NUM, 0);
 
   lock_release(&swap_lock);
 }

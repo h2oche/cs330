@@ -10,6 +10,7 @@
 #include "userprog/syscall.h"
 #include "filesys/file.h"
 #include "vm/frametbl.h"
+#include "threads/malloc.h"
 
 static bool install_page (void *upage, void *kpage, bool writable);
 
@@ -19,7 +20,7 @@ unsigned
 spagetbl_hash_func(const struct hash_elem *elem, void * aux UNUSED)
 {
     const struct spage_table_entry* spte = hash_entry(elem, struct spage_table_entry, elem);
-    return hash_bytes(&spte->vaddr, sizeof(&spte->vaddr));
+    return hash_bytes(&spte->upage, sizeof(&spte->upage));
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -29,11 +30,19 @@ spagetbl_hash_less_func(const struct hash_elem* elem1, const struct hash_elem* e
 {
     const struct spage_table_entry* spte1 = hash_entry(elem1, struct spage_table_entry, elem);
     const struct spage_table_entry* spte2 = hash_entry(elem2, struct spage_table_entry, elem);
-    return spte1->vaddr < spte2->vaddr;
+    return spte1->upage < spte2->upage;
 }
 
 /*---------------------------------------------------------------------------------------*/
-/* vaddr로 spage_table_entry 찾기, 없는 경우 NULL */
+bool
+spagetbl_init(void)
+{
+  return hash_init(&thread_current()->spagetbl, spagetbl_hash_func, spagetbl_hash_less_func, NULL);
+}
+
+/*---------------------------------------------------------------------------------------*/
+/* vaddr를 받아서 페이지 주소(virtual page address)로 변환 후
+   spage_table_entry 찾기, 없는 경우 NULL */
 
 struct spage_table_entry*
 spagetbl_get_spte(void *vaddr)
@@ -41,9 +50,7 @@ spagetbl_get_spte(void *vaddr)
   struct spage_table_entry spte;
   struct hash_elem* e = NULL;
 
-  PANIC("SPAGE_TBL_ENTRY");
-
-  spte.vaddr = pg_round_down(vaddr);
+  spte.upage = pg_round_down(vaddr);
   if((e=hash_find(&thread_current()->spagetbl, &spte.elem)) == NULL)
     return NULL; // 없는 경우
   return hash_entry(e, struct spage_table_entry, elem);
@@ -56,12 +63,10 @@ spagetbl_load(struct spage_table_entry* spte)
 {
   uint8_t *frame = NULL;
 
-  PANIC("SPTBL_LOAD");
-
   switch(spte->storage){
     case SPG_FILESYS:
       /* TODO 할당 받은 frame에 파일 쓰고(남는 부분은 0으로 채우기), install page 하기 */ 
-      frame = frametbl_get_frame(PAL_USER, spte->vaddr);
+      frame = frametbl_get_frame(PAL_USER, spte->upage);
       if(frame == NULL) return false;
 
       sema_down(&filesys_sema);
@@ -76,44 +81,48 @@ spagetbl_load(struct spage_table_entry* spte)
       memset(frame + spte->read_bytes, 0, spte->zero_bytes);
 
       // install page
-      if(!install_page(spte->vaddr, frame, spte->writable)){
+      if(!install_page(spte->upage, frame, spte->writable)){
         frametbl_free_frame(frame);
         return false;
       }
+      spte->kpage = frame;
       return true;
 
     case SPG_ZERO:
       /* TODO 빈 페이지 install 하기 */
-      frame = frametbl_get_frame(PAL_USER | PAL_ZERO, spte->vaddr);
+      frame = frametbl_get_frame(PAL_USER | PAL_ZERO, spte->upage);
       if(frame == NULL) return false;
 
       memset(frame, 0, PGSIZE); // frame 0으로 채우기
 
       // install page
-      if(!install_page(spte->vaddr, frame, spte->writable)){
+      if(!install_page(spte->upage, frame, spte->writable)){
         frametbl_free_frame(frame);
         return false;
       }
+      spte->kpage = frame;
       return true;
 
     case SPG_SWAP:
       /* TODO 페이지 할당해서 swap disk에 있는 페이지 옮김 */
-      frame = frametbl_get_frame(PAL_USER, spte->vaddr);
+      frame = frametbl_get_frame(PAL_USER, spte->upage);
       if(frame==NULL) return false;
 
       // install page
-      if(!install_page(spte->vaddr, frame, spte->writable)){
+      if(!install_page(spte->upage, frame, spte->writable)){
         frametbl_free_frame(frame);
         return false;
       }
 
-      swap_in(spte->swap_sec_no, spte->vaddr);
+      swap_in(spte->swap_sec_no, spte->upage);
+      spte->kpage = frame;
       return true;  
 
     case SPG_MEMORY:
       /* 이미 메모리에 있어서 아무것도 안해도 됨 */
       return true;
   }
+  return false;
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -129,4 +138,22 @@ install_page (void *upage, void *kpage, bool writable)
 }
 
 /*---------------------------------------------------------------------------------------*/
+bool
+spagetbl_stack_grow(void * upage)
+{
+  /* TODO spte 만들어서 정보 저장하고 insert, 로드하기 */
+  struct spage_table_entry* spte = (struct spage_table_entry *)malloc(sizeof(struct spage_table_entry));
+  if(spte == NULL)
+    return false;
+  spte->upage = upage;
+  spte->kpage = NULL; // load에서 설정될 예정
+  spte->storage = SPG_ZERO;
+  spte->writable = true;
+  hash_insert(&thread_current()->spagetbl, &spte->elem);
 
+  if(!spagetbl_load(spte))
+    return false;
+
+  printf("stack grow done\n");
+  return true;
+}

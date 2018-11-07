@@ -205,6 +205,11 @@ start_process (void *f_name)
   struct intr_frame if_;
   bool success;
 
+//  printf("start process\n");
+
+  /* supplemental page table 초기화 */
+  spagetbl_init();
+
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -437,9 +442,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
-  /* init supplementary hash table */
-  hash_init(&t->spagetbl, spagetbl_hash_func, spagetbl_hash_less_func, NULL);
-
   /* TODO 파일 이름 파싱 - open 위해서 */
   char *save_ptr;
   char *fn_copy = malloc(strlen(file_name)+1);
@@ -623,6 +625,8 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
 
+  struct spage_table_entry* spte = NULL;
+
   file_seek (file, ofs);
   while( read_bytes > 0 || zero_bytes > 0 )
     {
@@ -630,15 +634,17 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      struct spage_table_entry* spte = (struct spage_table_entry*)malloc(sizeof(struct spage_table_entry));
-      if(spte == NULL)
+      if((spte = (struct spage_table_entry*)malloc(sizeof(struct spage_table_entry))) == NULL)
         return false;
-      spte->vaddr = upage;
+
+      spte->upage = upage;
+      spte->kpage = NULL;
+      spte->storage = SPG_FILESYS;
       spte->offset = ofs;
       spte->read_bytes = page_read_bytes;
       spte->zero_bytes = page_zero_bytes;
       spte->writable = writable;
-      spte->storage = SPG_FILESYS; //page_read_bytes == 0 ? SPG_ZERO : SPG_FILESYS; -> 0인 경우는 while문 통과 못함.
+
       hash_insert(&thread_current()->spagetbl, &spte->elem);
 
       /* Advance. */
@@ -649,7 +655,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     }
 
   return true;
-
 }
 
 /* Create a minimal stack by mapping a zeroed page at the top of
@@ -657,27 +662,16 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp, const char *file_name) 
 {
-  uint8_t *kpage;
   bool success = false;
 
-  kpage = frametbl_get_frame(PAL_USER|PAL_ZERO, PHYS_BASE-PGSIZE);
-  if (kpage != NULL){
-    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-
-    if(!success){
-      frametbl_free_frame (kpage);
-      return false;
-    }
-
-    /* TODO spage_table_entry 만들어서 insert */
-    struct spage_table_entry* spte = (struct spage_table_entry*)malloc(sizeof(struct spage_table_entry));
-    spte->vaddr = ((uint8_t *) PHYS_BASE) - PGSIZE;
-    spte->writable = true;
-    spte->storage = SPG_MEMORY;
-    hash_insert(&thread_current()->spagetbl, &spte->elem);
-
-    *esp = PHYS_BASE;
+  /* 스택 할당 */
+  if(!spagetbl_stack_grow((uint8_t *)PHYS_BASE - PGSIZE)){
+    return false;
   }
+
+  /* TODO esp 설정 */
+  *esp = PHYS_BASE;
+
 
   /* TODO 파싱해서 스택에 넣기 */
   char *token, *save_ptr;
@@ -713,6 +707,7 @@ setup_stack (void **esp, const char *file_name)
     *esp -= (strlen(argv[i])+1);
     memcpy(*esp, argv[i], strlen(argv[i])+1);
     argv[i] = *esp;
+//    printf("%d\n", i);
   }
 
   /* alignment */
