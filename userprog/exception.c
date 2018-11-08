@@ -162,59 +162,60 @@ page_fault (struct intr_frame *f)
 
   struct spage_table_entry* spte = NULL;
 
-  /* TODO 커널에 의해 page fault가 나면 eax와 eip 설정 */
+  /* TODO 읽기 전용에 쓰려고 한 경우, kill */
+  if(!not_present)
+    goto INVALID_ACCESS;
+
+  /* TODO esp 결정
+            case 1) user progrma에 의한 fault -> intr_fram에 esp 사용,
+            case 2) kernel에 의한 fault -> syscall_handler에서 thread struct에 저장한 esp 사용 
+  */
+  void *esp = user? f->esp : thread_current()->esp;
+
+  /* TODO 처리
+     case 1) kernel 영역 접근 -> kill
+     case 2) user 영역 접근 (fault_addr < PHYS_BASE)
+       case 2-1) fault_addr_page에 관한 정보가 spagetbl에 있다
+                 (= 메모리에 올려지지 않아 발생한 fault)
+                 -> load
+       case 2-2) spagetbl에 없다.
+         case 2-2-1) 스택 증가가 필요한 상황 && 스택 크기 제한 벗어나지 않음 -> stack grow
+           i)  PUSH하는 경우(= fault_addr == esp-4 또는 esp-32)
+           ii) fault_addr이 스택 내부에 속하는데 fault 발생한 경우
+               (=정상적인 활동을 하다가 stack page를 벗어났다: 스택을 증가시켜야 함)
+         case 2-2-2) 잘못된 접근 -> kill
+  */
+//printf("falut_addr: %p\n", fault_addr);
+  if(fault_addr < PHYS_BASE){ // case 2)
+    if((spte=spagetbl_get_spte(fault_addr))){ // case 2-1)
+      if(spagetbl_load(spte))
+        return;
+      goto FAIL;
+    }
+    else{ // case 2-2)
+      if(PHYS_BASE-STACK_LIMIT<=fault_addr){ // case 2-2-1)
+        if(fault_addr == esp-4 || fault_addr == esp-32 || esp <= fault_addr){ // i), ii)
+          if(spagetbl_stack_grow(fault_addr_page)) return;
+          goto FAIL;
+        }
+      }
+    }
+  }
+
+  goto INVALID_ACCESS;
+
+
+
+  INVALID_ACCESS:
+  FAIL:
+//  /* TODO 커널에 의해 page fault가 나면 eax와 eip 설정 */
   if(!user){
     f->eip = (void *)f->eax;
     f->eax = 0xffffffff;
     return;
   } 
 
-
-
-  /* TODO 정리 필요 */
-
-//  if(!not_present) goto FAIL;
-//
-//  if(fault_addr < PHYS_BASE && fault_addr >= PHYS_BASE - STACK_LIMIT){
-////    printf("AAA\n");
-//    if((spte = spagetbl_get_spte(fault_addr)) == NULL){
-//      if(!spagetbl_stack_grow(fault_addr_page))
-//        goto FAIL;
-//      return;
-//    }
-//    else{
-//      if(!spagetbl_load(spte))
-//        goto FAIL;
-//      return;
-//    }
-//  }
-//
-////  printf("BBB\n");
-//  spte = spagetbl_get_spte(fault_addr);
-//  if(spte){
-////    printf("spte exist\n");
-//    if(spagetbl_load(spte)){
-////      printf("load success\n");
-//      return;
-//    }
-////    printf("load fail\n");
-//  }
-
-
-  bool success = false;
-  if(not_present && fault_addr < PHYS_BASE){
-    spte = spagetbl_get_spte(fault_addr);
-    if(spte){
-      success = spagetbl_load(spte);
-    }
-    else if(fault_addr == f->esp-4 || fault_addr == f->esp-32 || f->esp <= fault_addr)
-      success = spagetbl_stack_grow(fault_addr);
-  }
-
-  if(success) return;
-
-
-  FAIL:
+  PRINT:
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */

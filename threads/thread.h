@@ -113,6 +113,7 @@ struct thread
 
     /* VM */
     struct hash spagetbl;
+    uint8_t *esp;
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */

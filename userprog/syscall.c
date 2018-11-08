@@ -264,8 +264,9 @@ static void syscall_read(struct intr_frame *f)
   void *buffer = *(void **)(f->esp+8);
   unsigned size = *(unsigned *)(f->esp+12);
 
-  if(!is_valid_buffer(buffer, size))
+  if(!is_valid_buffer(buffer, size)){
     return error_exit();
+  }
 
   int read_size = -1;
   unsigned i;
@@ -424,6 +425,10 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
+
+  /* esp 저장 */
+  thread_current()->esp = f->esp;
+
   if(!is_valid_ptr(f->esp, 4))
     return error_exit();
 
