@@ -8,13 +8,12 @@
 #include "threads/vaddr.h"
 #include "userprog/syscall.h"
 #include "userprog/pagedir.h"
-#include "threads/malloc.h"
 
 /* VM */
 #include "vm/spagetbl.h"
 #include "vm/frametbl.h"
 
-#define STACK_LIMIT 8388608 //8MB
+#define STACK_LIMIT 0x800000 //8MB
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -170,27 +169,50 @@ page_fault (struct intr_frame *f)
     return;
   } 
 
-  /* TODO 1) 제대로 접근
-          2) 스택 주소에 해당(PHYS_BASE - STAK_LIMIT < fault_addr <= PHYS_BASE) 하는 경우
 
-          case 1) spte가 존재하면, page가 memory에 올려져있지 않아서 발생한 page fault.
-                    =>  로드
-          case 2) spte가 존재하지 않으면, 추가적인 페이지가 필요해서 발생한 page fault.
-                    => stack 증가
-  */
-  if(not_present && fault_addr < PHYS_BASE && fault_addr >= PHYS_BASE - STACK_LIMIT){
-    if((spte = spagetbl_get_spte(fault_addr)) == NULL){
-      if(!spagetbl_stack_grow(fault_addr_page))
-        goto FAIL;
-      return;
+
+  /* TODO 정리 필요 */
+
+//  if(!not_present) goto FAIL;
+//
+//  if(fault_addr < PHYS_BASE && fault_addr >= PHYS_BASE - STACK_LIMIT){
+////    printf("AAA\n");
+//    if((spte = spagetbl_get_spte(fault_addr)) == NULL){
+//      if(!spagetbl_stack_grow(fault_addr_page))
+//        goto FAIL;
+//      return;
+//    }
+//    else{
+//      if(!spagetbl_load(spte))
+//        goto FAIL;
+//      return;
+//    }
+//  }
+//
+////  printf("BBB\n");
+//  spte = spagetbl_get_spte(fault_addr);
+//  if(spte){
+////    printf("spte exist\n");
+//    if(spagetbl_load(spte)){
+////      printf("load success\n");
+//      return;
+//    }
+////    printf("load fail\n");
+//  }
+
+
+  bool success = false;
+  if(not_present && fault_addr < PHYS_BASE){
+    spte = spagetbl_get_spte(fault_addr);
+    if(spte){
+      success = spagetbl_load(spte);
     }
-    else{
-      if(!spagetbl_load(spte))
-        goto FAIL;
-      spte->storage = SPG_MEMORY;
-      return;
-    }
+    else if(fault_addr == f->esp-4 || fault_addr == f->esp-32 || f->esp <= fault_addr)
+      success = spagetbl_stack_grow(fault_addr);
   }
+
+  if(success) return;
+
 
   FAIL:
   /* To implement virtual memory, delete the rest of the function

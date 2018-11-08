@@ -2,6 +2,7 @@
 #include <hash.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include "vm/swap.h"
 #include "userprog/pagedir.h"
 #include "threads/vaddr.h"
@@ -79,13 +80,14 @@ spagetbl_load(struct spage_table_entry* spte)
       }
       sema_up(&filesys_sema);
       memset(frame + spte->read_bytes, 0, spte->zero_bytes);
-
+//printf("FILE writable: %d\n", spte->writable);
       // install page
       if(!install_page(spte->upage, frame, spte->writable)){
         frametbl_free_frame(frame);
         return false;
       }
       spte->kpage = frame;
+      spte->storage = SPG_MEMORY;
       return true;
 
     case SPG_ZERO:
@@ -94,12 +96,13 @@ spagetbl_load(struct spage_table_entry* spte)
       if(frame == NULL) return false;
 
       memset(frame, 0, PGSIZE); // frame 0으로 채우기
-
+//printf("ZERO writable: %d\n", spte->writable);
       // install page
       if(!install_page(spte->upage, frame, spte->writable)){
         frametbl_free_frame(frame);
         return false;
       }
+      spte->storage = SPG_MEMORY;
       spte->kpage = frame;
       return true;
 
@@ -107,7 +110,7 @@ spagetbl_load(struct spage_table_entry* spte)
       /* TODO 페이지 할당해서 swap disk에 있는 페이지 옮김 */
       frame = frametbl_get_frame(PAL_USER, spte->upage);
       if(frame==NULL) return false;
-
+//printf("SWAP writable: %d\n", spte->writable);
       // install page
       if(!install_page(spte->upage, frame, spte->writable)){
         frametbl_free_frame(frame);
@@ -116,6 +119,7 @@ spagetbl_load(struct spage_table_entry* spte)
 
       swap_in(spte->swap_sec_no, spte->upage);
       spte->kpage = frame;
+      spte->storage = SPG_MEMORY;
       return true;  
 
     case SPG_MEMORY:
@@ -139,13 +143,13 @@ install_page (void *upage, void *kpage, bool writable)
 
 /*---------------------------------------------------------------------------------------*/
 bool
-spagetbl_stack_grow(void * upage)
+spagetbl_stack_grow(void * vaddr)
 {
   /* TODO spte 만들어서 정보 저장하고 insert, 로드하기 */
   struct spage_table_entry* spte = (struct spage_table_entry *)malloc(sizeof(struct spage_table_entry));
   if(spte == NULL)
     return false;
-  spte->upage = upage;
+  spte->upage = pg_round_down(vaddr);
   spte->kpage = NULL; // load에서 설정될 예정
   spte->storage = SPG_ZERO;
   spte->writable = true;
@@ -154,6 +158,6 @@ spagetbl_stack_grow(void * upage)
   if(!spagetbl_load(spte))
     return false;
 
-  printf("stack grow done\n");
+//  printf("stack grow done\n");
   return true;
 }

@@ -216,13 +216,16 @@ start_process (void *f_name)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
+//printf("success: %d\n", success);
 
   struct thread* parent = thread_current()->parent;
   parent->child_success = success;
   sema_up(&parent->load_lock);
 
   /* If load failed, quit. */
+//PANIC("AAA");
   palloc_free_page (file_name);
+//PANIC("AAA");
   if (!success){
     thread_exit ();
   }
@@ -536,7 +539,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   if (strlen(file_name) > PGSIZE / 2 || !setup_stack (esp, file_name))
     goto done;
 
-
 //  hex_dump(PHYS_BASE - 0x70, PHYS_BASE - 0x70, 0x70, true);
 
   /* Start address. */
@@ -593,7 +595,7 @@ validate_segment (const struct Elf32_Phdr *phdr, struct file *file)
 
   /* Disallow mapping page 0.
      Not only is it a bad idea to map page 0, but if we allowed
-     it then user code that passed a null pointer to system calls
+     it then user code that passed a null pointer to sytem calls
      could quite likely panic the kernel by way of null pointer
      assertions in memcpy(), etc. */
   if (phdr->p_vaddr < PGSIZE)
@@ -662,8 +664,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp, const char *file_name) 
 {
-  bool success = false;
-
   /* 스택 할당 */
   if(!spagetbl_stack_grow((uint8_t *)PHYS_BASE - PGSIZE)){
     return false;
@@ -745,8 +745,7 @@ setup_stack (void **esp, const char *file_name)
   /* free */
   free(argv);
   free(fn_copy);
-
-  return success;
+  return true;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
