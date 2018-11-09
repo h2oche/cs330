@@ -180,7 +180,7 @@ page_fault (struct intr_frame *f)
                  -> load
        case 2-2) spagetbl에 없다.
          case 2-2-1) 스택 증가가 필요한 상황 && 스택 크기 제한 벗어나지 않음 -> stack grow
-           i)  PUSH하는 경우(= fault_addr == esp-4 또는 esp-32)
+           i)  PUSH하는 경우(= fault_addr == esp-4(PUSH) 또는 esp-32(PUSHA))
            ii) fault_addr이 스택 내부에 속하는데 fault 발생한 경우
                (=정상적인 활동을 하다가 stack page를 벗어났다: 스택을 증가시켜야 함)
          case 2-2-2) 잘못된 접근 -> kill

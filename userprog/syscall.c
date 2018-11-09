@@ -33,6 +33,18 @@ static int get_user (const uint8_t *uaddr)
 
 /*---------------------------------------------------------------------------------------*/
 
+/*---------------------------------------------------------------------------------------*/
+/* Write a bte at user virtual address UDST */
+static bool
+put_user (uint8_t *udst, uint8_t byte)
+{
+  int error_code;
+  asm ("movl $1f, %0; movb %b2, %1; 1:"
+       : "=&a" (error_code), "=m" (*udst) : "r" (byte));
+  return error_code != -1;
+}
+/*---------------------------------------------------------------------------------------*/
+
 /* user 포인터 확인하는 함수 */
 static bool is_valid_ptr(const void *base, unsigned size)
 {
@@ -68,8 +80,16 @@ static bool is_valid_string(const void *str)
 /* 버퍼 끝까지 유효한 지 확인 */
 static bool is_valid_buffer(const void *buffer, unsigned size)
 {
-  if(!is_valid_ptr(buffer, size))
-    return false;
+  uint8_t* ptr = (uint8_t *)buffer;
+  uint32_t i = 0;
+  int result;
+  
+  for(;i < size; i++) {
+    if((result = get_user(ptr)) == -1) return false;
+    if(!put_user(ptr, (uint8_t)result)) return false;
+    ptr++;
+  }
+  
   return true;
 }
 
@@ -313,7 +333,7 @@ static void syscall_write(struct intr_frame *f)
   const void *buffer = *(char **)(f->esp+8);
   unsigned size = *(unsigned *)(f->esp+12);
 
-  if(!is_valid_buffer(buffer, size))
+  if(!is_valid_ptr(buffer, size))
     return error_exit();
 
   int write_size = -1;
