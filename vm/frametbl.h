@@ -13,6 +13,7 @@ struct frame_table_entry {
     bool presented;
     void* frame;
     uint32_t *pagedir;
+    struct hash *spagetbl;
     void* vaddr;
 };
 

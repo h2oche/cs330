@@ -185,9 +185,9 @@ page_fault (struct intr_frame *f)
                (=정상적인 활동을 하다가 stack page를 벗어났다: 스택을 증가시켜야 함)
          case 2-2-2) 잘못된 접근 -> kill
   */
-//printf("falut_addr: %p\n", fault_addr);
+// printf("falut_addr: %p\n", fault_addr);
   if(fault_addr < PHYS_BASE){ // case 2)
-    if((spte=spagetbl_get_spte(fault_addr))){ // case 2-1)
+    if((spte=spagetbl_get_spte(&thread_current()->spagetbl, fault_addr))){ // case 2-1)
       if(spagetbl_load(spte))
         return;
       goto FAIL;
@@ -210,6 +210,7 @@ page_fault (struct intr_frame *f)
   FAIL:
 //  /* TODO 커널에 의해 page fault가 나면 eax와 eip 설정 */
   if(!user){
+    // printf("what??\n");
     f->eip = (void *)f->eax;
     f->eax = 0xffffffff;
     return;

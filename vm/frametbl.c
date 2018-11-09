@@ -72,24 +72,38 @@ frametbl_get_frame(enum palloc_flags flags, void *vaddr)
     /* TODO check if user pool is full */
     lock_acquire(&frametbl_lock);
 
+    /* user pool이 다 찬 경우  */
     if(frame_left_cnt == 0){
-      /* user pool이 다 찬 경우  */
-//PANIC("QQQ");
-      while(true){
-        fte = &frame_table[search_idx()];
-        if(pagedir_is_accessed(fte->pagedir, fte->vaddr))
-          // accessed bit 바꾸고 넘어감.
-          pagedir_set_accessed(fte->pagedir, fte->vaddr, false);
-        else break; // 선택
-      }
+        /* select victim */
+        while(true){
+            fte = &frame_table[search_idx()];
+            if(pagedir_is_accessed(fte->pagedir, fte->vaddr))
+                // accessed bit 바꾸고 넘어감.
+                pagedir_set_accessed(fte->pagedir, fte->vaddr, false);
+            else break; // 선택
+        }
 
-      // swap disk에 저장
-      struct spage_table_entry* spte = spagetbl_get_spte(fte->vaddr);
-      spte->storage = SPG_SWAP;
-      spte->swap_sec_no = swap_out(fte->frame);
+        /* swap disk에 저장 */
+        struct spage_table_entry* spte = spagetbl_get_spte(fte->spagetbl, fte->vaddr);
+        ASSERT(spte != NULL);
 
-      // 비우기
-      frametbl_free_frame(fte->frame);
+        /* spte update */
+        spte->storage = SPG_SWAP;
+        spte->swap_sec_no = swap_out(fte->frame);
+        // printf("swap out!!(%x)\n", fte->vaddr);
+
+        /* swap out 된 frame 비우기 */
+        ASSERT(fte->frame != NULL);
+        palloc_free_page(fte->frame);
+
+        /* pte update */
+        pagedir_clear_page(fte->pagedir, fte->vaddr);
+
+        /* fte update */
+        fte = &frame_table[frametbl_index(fte->frame)];
+        fte->presented = false;
+        fte->frame = NULL;
+        frame_left_cnt++;
     }
 
     /* TODO
@@ -107,10 +121,12 @@ frametbl_get_frame(enum palloc_flags flags, void *vaddr)
     lock_acquire(&frametbl_lock);
     fte = &frame_table[frametbl_index(kpage)];
     
+    /* fte update */
     ASSERT(fte->presented == false);
     fte->presented = true;
     fte->frame = kpage;
     fte->pagedir = thread_current()->pagedir;
+    fte->spagetbl = &thread_current()->spagetbl;
     fte->vaddr = vaddr;
       
     lock_release(&frametbl_lock);

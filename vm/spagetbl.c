@@ -46,13 +46,13 @@ spagetbl_init(void)
    spage_table_entry 찾기, 없는 경우 NULL */
 
 struct spage_table_entry*
-spagetbl_get_spte(void *vaddr)
+spagetbl_get_spte(struct hash* spagetbl, void *vaddr)
 {
   struct spage_table_entry spte;
   struct hash_elem* e = NULL;
 
   spte.upage = pg_round_down(vaddr);
-  if((e=hash_find(&thread_current()->spagetbl, &spte.elem)) == NULL)
+  if((e=hash_find(spagetbl, &spte.elem)) == NULL)
     return NULL; // 없는 경우
   return hash_entry(e, struct spage_table_entry, elem);
 }
@@ -80,8 +80,7 @@ spagetbl_load(struct spage_table_entry* spte)
       }
       sema_up(&filesys_sema);
       memset(frame + spte->read_bytes, 0, spte->zero_bytes);
-//printf("FILE writable: %d\n", spte->writable);
-      // install page
+
       if(!install_page(spte->upage, frame, spte->writable)){
         frametbl_free_frame(frame);
         return false;
@@ -96,8 +95,6 @@ spagetbl_load(struct spage_table_entry* spte)
       if(frame == NULL) return false;
 
       memset(frame, 0, PGSIZE); // frame 0으로 채우기
-//printf("ZERO writable: %d\n", spte->writable);
-      // install page
       if(!install_page(spte->upage, frame, spte->writable)){
         frametbl_free_frame(frame);
         return false;
@@ -110,16 +107,18 @@ spagetbl_load(struct spage_table_entry* spte)
       /* TODO 페이지 할당해서 swap disk에 있는 페이지 옮김 */
       frame = frametbl_get_frame(PAL_USER, spte->upage);
       if(frame==NULL) return false;
-//printf("SWAP writable: %d\n", spte->writable);
-      // install page
-      if(!install_page(spte->upage, frame, spte->writable)){
-        frametbl_free_frame(frame);
-        return false;
-      }
 
-      swap_in(spte->swap_sec_no, spte->upage);
+      // printf("swap in!! (0x%x)\n", spte->upage);
+
+      swap_in(spte->swap_sec_no, frame);
+
+      /* spte update */
       spte->kpage = frame;
       spte->storage = SPG_MEMORY;
+
+      /* pte update */
+      pagedir_set_page(thread_current()->pagedir, spte->upage, frame, spte->writable);
+
       return true;  
 
     case SPG_MEMORY:

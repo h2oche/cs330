@@ -1,10 +1,11 @@
 #include "vm/swap.h"
 #include "devices/disk.h"
 #include "threads/synch.h"
+#include "threads/vaddr.h"
 #include "lib/kernel/bitmap.h"
 #include "lib/debug.h"
 
-#define PAGE_SECTOR_NUM 8
+#define PAGE_SECTOR_NUM ((PGSIZE) / (DISK_SECTOR_SIZE))
 
 struct disk* swap_disk;
 struct lock swap_lock;
@@ -35,8 +36,8 @@ size_t swap_out(void *frame)
   if(sec_no == BITMAP_ERROR)
     PANIC("Disk is full");
 
-  for(i=sec_no; i<PAGE_SECTOR_NUM; i++){
-    disk_write(swap_disk, i, frame+i*DISK_SECTOR_SIZE);
+  for(i=0; i<PAGE_SECTOR_NUM; i++){
+    disk_write(swap_disk, sec_no + i, frame+i*DISK_SECTOR_SIZE);
   }
 
   lock_release(&swap_lock);

@@ -36,7 +36,7 @@ void spagetbl_create(void);
 void spagetbl_destroy(void);
 unsigned spagetbl_hash_func(const struct hash_elem*, void *);
 bool spagetbl_hash_less_func(const struct hash_elem*, const struct hash_elem*, void*);
-struct spage_table_entry* spagetbl_get_spte(void *);
+struct spage_table_entry* spagetbl_get_spte(struct hash*, void *);
 bool spagetbl_load(struct spage_table_entry*);
 bool spagetbl_stack_grow(void *);
 
