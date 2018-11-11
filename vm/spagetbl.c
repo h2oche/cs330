@@ -87,6 +87,8 @@ spagetbl_load(struct spage_table_entry* spte)
       }
       spte->kpage = frame;
       spte->storage = SPG_MEMORY;
+
+      frametbl_load_complete(frame);
       return true;
 
     case SPG_ZERO:
@@ -101,6 +103,8 @@ spagetbl_load(struct spage_table_entry* spte)
       }
       spte->storage = SPG_MEMORY;
       spte->kpage = frame;
+
+      frametbl_load_complete(frame);
       return true;
 
     case SPG_SWAP:
@@ -119,6 +123,7 @@ spagetbl_load(struct spage_table_entry* spte)
       /* pte update */
       pagedir_set_page(thread_current()->pagedir, spte->upage, frame, spte->writable);
 
+      frametbl_load_complete(frame);
       return true;  
 
     case SPG_MEMORY:

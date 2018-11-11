@@ -15,6 +15,7 @@
 size_t frame_left_cnt = 0;
 size_t frame_max_cnt = 0;
 struct lock frametbl_lock;
+struct lock eviction_lock;
 struct frame_table_entry* frame_table;
 extern struct pool user_pool;
 size_t frame_search = 0;
@@ -48,6 +49,7 @@ frametbl_init(void)
     size_t i;
 
     lock_init(&frametbl_lock);
+    lock_init(&eviction_lock);
     frame_max_cnt = bitmap_size (user_pool.used_map);
 //    printf("cnt: %u\n", frame_max_cnt);
     frame_left_cnt = frame_max_cnt;
@@ -61,6 +63,46 @@ frametbl_init(void)
     }
 }
 
+void
+frametbl_evict()
+{
+    struct frame_table_entry* fte;
+
+    lock_acquire(&eviction_lock);
+    /* select victim */
+    while(true){
+        fte = &frame_table[search_idx()];
+        if(fte->is_loading) continue;
+        if(pagedir_is_accessed(fte->pagedir, fte->vaddr))
+            // accessed bit 바꾸고 넘어감.
+            pagedir_set_accessed(fte->pagedir, fte->vaddr, false);
+        else break; // 선택
+    }
+
+    /* swap disk에 저장 */
+    struct spage_table_entry* spte = spagetbl_get_spte(fte->spagetbl, fte->vaddr);
+    ASSERT(spte != NULL);
+
+    /* spte update */
+    spte->storage = SPG_SWAP;
+    spte->swap_sec_no = swap_out(fte->frame);
+    // printf("swap out!!(%x)\n", fte->vaddr);
+
+    /* swap out 된 frame 비우기 */
+    ASSERT(fte->frame != NULL);
+    palloc_free_page(fte->frame);
+
+    /* pte update */
+    pagedir_clear_page(fte->pagedir, fte->vaddr);
+    
+    /* fte update */
+    fte = &frame_table[frametbl_index(fte->frame)];
+    fte->presented = false;
+    fte->frame = NULL;
+    frame_left_cnt++;
+    lock_release(&eviction_lock);
+}
+
 /*---------------------------------------------------------------------------------------*/
 /* wrapper of palloc_get_page(PAL_USER) */ 
 void*
@@ -69,41 +111,15 @@ frametbl_get_frame(enum palloc_flags flags, void *vaddr)
     void* kpage;
     struct frame_table_entry* fte;
 
-    /* TODO check if user pool is full */
     lock_acquire(&frametbl_lock);
 
+    /* TODO check if user pool is full */
+    
     /* user pool이 다 찬 경우  */
     if(frame_left_cnt == 0){
-        /* select victim */
-        while(true){
-            fte = &frame_table[search_idx()];
-            if(pagedir_is_accessed(fte->pagedir, fte->vaddr))
-                // accessed bit 바꾸고 넘어감.
-                pagedir_set_accessed(fte->pagedir, fte->vaddr, false);
-            else break; // 선택
-        }
-
-        /* swap disk에 저장 */
-        struct spage_table_entry* spte = spagetbl_get_spte(fte->spagetbl, fte->vaddr);
-        ASSERT(spte != NULL);
-
-        /* spte update */
-        spte->storage = SPG_SWAP;
-        spte->swap_sec_no = swap_out(fte->frame);
-        // printf("swap out!!(%x)\n", fte->vaddr);
-
-        /* swap out 된 frame 비우기 */
-        ASSERT(fte->frame != NULL);
-        palloc_free_page(fte->frame);
-
-        /* pte update */
-        pagedir_clear_page(fte->pagedir, fte->vaddr);
-
-        /* fte update */
-        fte = &frame_table[frametbl_index(fte->frame)];
-        fte->presented = false;
-        fte->frame = NULL;
-        frame_left_cnt++;
+        // lock_release(&frametbl_lock);
+        frametbl_evict();
+        // lock_acquire(&frametbl_lock);
     }
 
     /* TODO
@@ -111,29 +127,21 @@ frametbl_get_frame(enum palloc_flags flags, void *vaddr)
         2. palloc_get_page : DONE
         3. update frametbl(synch) : DONE       */
 
-//PANIC("AAA");
-
     frame_left_cnt--;
-    lock_release(&frametbl_lock);
-
     kpage = palloc_get_page(flags);
-    //update frame table - fte 값 설정
-    lock_acquire(&frametbl_lock);
     fte = &frame_table[frametbl_index(kpage)];
     
     /* fte update */
     ASSERT(fte->presented == false);
     fte->presented = true;
+    fte->is_loading = true;
     fte->frame = kpage;
     fte->pagedir = thread_current()->pagedir;
     fte->spagetbl = &thread_current()->spagetbl;
     fte->vaddr = vaddr;
       
     lock_release(&frametbl_lock);
-
-//PANIC("ZZZ");
     return kpage;
-
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -146,6 +154,8 @@ frametbl_free_frame(void* kpage)
     ASSERT(frametbl_index(kpage) < frame_max_cnt);
 
     struct frame_table_entry* fte;
+
+    lock_acquire(&frametbl_lock);
     
     /* TODO if frame is valid
     1. palloc_free_page
@@ -153,12 +163,31 @@ frametbl_free_frame(void* kpage)
     2. update frame_left_cnt */
     palloc_free_page(kpage);
 
-    lock_acquire(&frametbl_lock);
     fte = &frame_table[frametbl_index(kpage)];
     fte->presented = false;
+    fte->is_loading = false;
     fte->frame = NULL;
 
     frame_left_cnt++;
     lock_release(&frametbl_lock);
 }
+/*---------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------*/
+void
+frametbl_load_complete(void* kpage)
+{   
+    ASSERT(kpage != NULL);
+    ASSERT(frametbl_index(kpage) < frame_max_cnt);
+
+    struct frame_table_entry* fte;
+
+    lock_acquire(&frametbl_lock);
+
+    fte = &frame_table[frametbl_index(kpage)];
+    fte->is_loading = false;
+
+    lock_release(&frametbl_lock);
+}
+
 /*---------------------------------------------------------------------------------------*/

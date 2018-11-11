@@ -15,10 +15,14 @@ struct frame_table_entry {
     uint32_t *pagedir;
     struct hash *spagetbl;
     void* vaddr;
+
+    bool is_evicting;
+    bool is_loading;
 };
 
 void frametbl_init(void); 
 void* frametbl_get_frame(enum palloc_flags, void *);
 void frametbl_free_frame(void*);
+void frametbl_load_complete(void*);
 
 #endif

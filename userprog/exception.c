@@ -210,7 +210,6 @@ page_fault (struct intr_frame *f)
   FAIL:
 //  /* TODO 커널에 의해 page fault가 나면 eax와 eip 설정 */
   if(!user){
-    // printf("what??\n");
     f->eip = (void *)f->eax;
     f->eax = 0xffffffff;
     return;
