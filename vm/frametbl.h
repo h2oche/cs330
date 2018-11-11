@@ -16,7 +16,6 @@ struct frame_table_entry {
     struct hash *spagetbl;
     void* vaddr;
 
-    bool is_evicting;
     bool is_loading;
 };
 

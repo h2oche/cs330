@@ -15,7 +15,6 @@
 size_t frame_left_cnt = 0;
 size_t frame_max_cnt = 0;
 struct lock frametbl_lock;
-struct lock eviction_lock;
 struct frame_table_entry* frame_table;
 extern struct pool user_pool;
 size_t frame_search = 0;
@@ -49,7 +48,6 @@ frametbl_init(void)
     size_t i;
 
     lock_init(&frametbl_lock);
-    lock_init(&eviction_lock);
     frame_max_cnt = bitmap_size (user_pool.used_map);
 //    printf("cnt: %u\n", frame_max_cnt);
     frame_left_cnt = frame_max_cnt;
@@ -68,7 +66,6 @@ frametbl_evict()
 {
     struct frame_table_entry* fte;
 
-    lock_acquire(&eviction_lock);
     /* select victim */
     while(true){
         fte = &frame_table[search_idx()];
@@ -83,24 +80,24 @@ frametbl_evict()
     struct spage_table_entry* spte = spagetbl_get_spte(fte->spagetbl, fte->vaddr);
     ASSERT(spte != NULL);
 
+    /* pte update */
+    pagedir_clear_page(fte->pagedir, fte->vaddr);
+
     /* spte update */
-    spte->storage = SPG_SWAP;
     spte->swap_sec_no = swap_out(fte->frame);
-    // printf("swap out!!(%x)\n", fte->vaddr);
+    
 
     /* swap out 된 frame 비우기 */
     ASSERT(fte->frame != NULL);
     palloc_free_page(fte->frame);
-
-    /* pte update */
-    pagedir_clear_page(fte->pagedir, fte->vaddr);
+    
+    spte->storage = SPG_SWAP;
     
     /* fte update */
     fte = &frame_table[frametbl_index(fte->frame)];
     fte->presented = false;
     fte->frame = NULL;
     frame_left_cnt++;
-    lock_release(&eviction_lock);
 }
 
 /*---------------------------------------------------------------------------------------*/
