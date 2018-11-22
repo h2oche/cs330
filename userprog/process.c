@@ -351,9 +351,6 @@ process_exit (void)
   /* TODO 종료 메세지 */
   printf("%s: exit(%d)\n", curr->name, exit_status);
 
-  /* TODO mmap 없애기 */
-  destroy_mmap();
-
   /* TODO 열었던 파일 모두 닫기, child_info, map_info 제거 */
   destroy_fd_infos(curr);
   destroy_children(curr);
