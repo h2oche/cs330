@@ -64,15 +64,16 @@ spagetbl_load(struct spage_table_entry* spte)
 {
   uint8_t *frame = NULL;
 
-  switch(spte->storage){
+  switch(spte->type){
     case SPG_FILESYS:
+    case SPG_MMAP:
       /* TODO 할당 받은 frame에 파일 쓰고(남는 부분은 0으로 채우기), install page 하기 */ 
       frame = frametbl_get_frame(PAL_USER, spte->upage);
       if(frame == NULL) return false;
 
       sema_down(&filesys_sema);
       // 파일 읽어서 frame에 쓰기
-      if(file_read_at(thread_current()->exe_file, frame, spte->read_bytes, spte->offset) != (int)spte->read_bytes)
+      if(file_read_at(spte->file, frame, spte->read_bytes, spte->offset) != (int)spte->read_bytes)
       {
         sema_up(&filesys_sema);
         frametbl_free_frame(frame);
@@ -86,8 +87,6 @@ spagetbl_load(struct spage_table_entry* spte)
         return false;
       }
       spte->kpage = frame;
-      spte->storage = SPG_MEMORY;
-
       frametbl_load_complete(frame);
       return true;
 
@@ -101,9 +100,7 @@ spagetbl_load(struct spage_table_entry* spte)
         frametbl_free_frame(frame);
         return false;
       }
-      spte->storage = SPG_MEMORY;
       spte->kpage = frame;
-
       frametbl_load_complete(frame);
       return true;
 
@@ -112,23 +109,12 @@ spagetbl_load(struct spage_table_entry* spte)
       frame = frametbl_get_frame(PAL_USER, spte->upage);
       if(frame==NULL) return false;
 
-      // printf("swap in!! (0x%x)\n", spte->upage);
-
       swap_in(spte->swap_sec_no, frame);
-
       /* spte update */
       spte->kpage = frame;
-      spte->storage = SPG_MEMORY;
-
       /* pte update */
       pagedir_set_page(thread_current()->pagedir, spte->upage, frame, spte->writable);
-
       frametbl_load_complete(frame);
-      return true;
-
-    case SPG_MEMORY:
-      /* 이미 메모리에 있어서 아무것도 안해도 됨 */
-      
       return true;
   }
   return false;
@@ -156,7 +142,7 @@ spagetbl_stack_grow(void * vaddr)
     return false;
   spte->upage = pg_round_down(vaddr);
   spte->kpage = NULL; // load에서 설정될 예정
-  spte->storage = SPG_ZERO;
+  spte->type = SPG_ZERO;
   spte->writable = true;
   hash_insert(&thread_current()->spagetbl, &spte->elem);
 

@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <hash.h>
 #include "threads/synch.h"
+#include "vm/spagetbl.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -115,6 +116,9 @@ struct thread
     struct hash spagetbl;
     uint8_t *esp;
 
+    struct list map_infos;
+    int mapid;
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
@@ -123,6 +127,13 @@ struct fd_info
 {
   int fd;
   struct file* file;
+  struct list_elem elem;
+};
+
+struct map_info
+{
+  int mapid;
+  struct spage_table_entry* spte;
   struct list_elem elem;
 };
 

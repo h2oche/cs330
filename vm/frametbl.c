@@ -10,6 +10,8 @@
 #include "vm/spagetbl.h"
 #include "userprog/process.h"
 #include "userprog/pagedir.h"
+#include "userprog/syscall.h"
+#include "filesys/file.h"
 
 /* GLOBAL */
 size_t frame_left_cnt = 0;
@@ -80,18 +82,27 @@ frametbl_evict()
     struct spage_table_entry* spte = spagetbl_get_spte(fte->spagetbl, fte->vaddr);
     ASSERT(spte != NULL);
 
+    /* TODO MMAP인 경우, dirty면 파일에 써주기 */
+    if(spte->type == SPG_MMAP){
+      if(pagedir_is_dirty(fte->pagedir, spte->upage)){
+        sema_down(&filesys_sema);
+        file_write_at(spte->file, spte->kpage, spte->read_bytes, spte->offset);
+        sema_up(&filesys_sema);
+      }
+      spte->kpage = NULL;
+    }
+    else{
+      /* spte update */
+      spte->swap_sec_no = swap_out(fte->frame);
+      spte->type = SPG_SWAP;
+    }
+
     /* pte update */
     pagedir_clear_page(fte->pagedir, fte->vaddr);
-
-    /* spte update */
-    spte->swap_sec_no = swap_out(fte->frame);
-    
 
     /* swap out 된 frame 비우기 */
     ASSERT(fte->frame != NULL);
     palloc_free_page(fte->frame);
-    
-    spte->storage = SPG_SWAP;
     
     /* fte update */
     fte = &frame_table[frametbl_index(fte->frame)];

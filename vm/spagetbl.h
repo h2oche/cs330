@@ -7,8 +7,8 @@
 /* indicate where page is currently located */
 enum spte_flags
   {
-    SPG_ZERO = 0x1,           /* memory, 빈 페이지 */
-    SPG_MEMORY = 0x2,         /* memory */
+    SPG_ZERO = 0x1,           /* 빈 페이지 */
+    SPG_MMAP = 0x2,           /* mmap */
     SPG_FILESYS = 0x4,        /* file system */
     SPG_SWAP = 0x8,           /* swap disk에 저장 */
   };
@@ -19,7 +19,7 @@ struct spage_table_entry {
 
     struct hash_elem elem;          /* Hash element */
 
-    enum spte_flags storage;        /* user page가 위치하는 곳 */
+    enum spte_flags type;           /* type */
 
     /* for swap */
     size_t swap_sec_no;             /* swap disk에 저장되어 있을 경우, 저장된 sector 번호 기록 */
@@ -29,6 +29,9 @@ struct spage_table_entry {
     uint32_t read_bytes;
     uint32_t zero_bytes;
     bool writable;
+
+    /* for mmap */
+    struct file* file;
 };
 
 bool spagetbl_init(void);

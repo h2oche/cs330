@@ -12,9 +12,14 @@
 #include "threads/init.h"
 #include "devices/input.h"
 #include <string.h>
+#include "vm/spagetbl.h"
+#include "vm/frametbl.h"
+#include "lib/round.h"
+#include "userprog/pagedir.h"
 
 //struct semaphore filesys_sema;
 static void syscall_handler (struct intr_frame *);
+void munmap(int);
 
 /*---------------------------------------------------------------------------------------*/
 /* Reads a byte at user virtual address UADDR.
@@ -33,7 +38,6 @@ static int get_user (const uint8_t *uaddr)
 
 /*---------------------------------------------------------------------------------------*/
 
-/*---------------------------------------------------------------------------------------*/
 /* Write a bte at user virtual address UDST */
 static bool
 put_user (uint8_t *udst, uint8_t byte)
@@ -432,6 +436,178 @@ static void syscall_close(struct intr_frame *f)
   sema_up(&filesys_sema);
 }
 
+/*---------------------------------------------------------------------------------------*/
+static void syscall_mmap(struct intr_frame *f)
+{
+//printf("syscall mmap!\n");
+  if(!is_valid_ptr(f->esp+4, 4) || !is_valid_ptr(f->esp+8, 4)){
+    f->eax = -1;
+    return;
+  }
+
+  int fd = *(int *)(f->esp+4);
+  void *addr = *(void **)(f->esp+8);
+
+  /* TODO fd 관련 fail */
+  if(fd==0 || fd==1){
+    f->eax = -1;
+    return;
+  }
+
+  struct fd_info *fd_info = get_fd_info(fd);
+  if(fd_info == NULL){
+    f->eax = -1;
+    return;
+  }
+
+  sema_down(&filesys_sema);
+  struct file* file = file_reopen(fd_info->file);
+  if(file == NULL){
+    sema_up(&filesys_sema);
+    f->eax = -1;
+    return;
+  }
+  sema_up(&filesys_sema);
+
+  off_t file_len;
+  sema_down(&filesys_sema);
+  if((file_len = file_length(file))==0){
+    sema_up(&filesys_sema);
+    f->eax = -1;
+    return;
+  }
+  sema_up(&filesys_sema);
+
+  /* TODO addr 관련 fail */
+  if(addr==0 || ((uint32_t)addr%PGSIZE) != 0){
+    f->eax = -1;
+    return;
+  }
+
+
+  uint32_t read_bytes = ROUND_UP(file_len, PGSIZE);
+  uint32_t zero_bytes = 0;
+  struct spage_table_entry* spte = NULL;
+  off_t ofs = 0;
+  struct map_info* pmap_info = NULL;
+
+  while(read_bytes>0||zero_bytes>0){
+    uint32_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+    uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+    /* TODO spage_table_entry 만들어서 넣기 */
+    if((spte = (struct spage_table_entry*)malloc(sizeof(struct spage_table_entry))) == NULL){
+      munmap(thread_current()->mapid);
+      f->eax = -1;
+      return;
+    }
+
+    spte->upage = addr;
+    spte->kpage = NULL;
+    spte->type = SPG_MMAP;
+    spte->offset = ofs;
+    spte->read_bytes = page_read_bytes;
+    spte->zero_bytes = page_zero_bytes;
+    spte->writable = true;
+    spte->file = file;
+
+    if(hash_insert(&thread_current()->spagetbl, &spte->elem)){
+      // 이미 있는 경우
+      free(spte);
+      munmap(thread_current()->mapid);
+      f->eax = -1;
+      return;
+    }
+    /* Advance. */
+    read_bytes -= page_read_bytes;
+    zero_bytes -= page_zero_bytes;
+    ofs += page_read_bytes;
+    addr += PGSIZE;
+
+
+    /* TODO map info 만들어서 thread의 map_infos에 저장 */
+    if((pmap_info = malloc(sizeof(struct map_info))) == NULL){
+      munmap(thread_current()->mapid);
+      f->eax = -1;
+      return;
+    }
+    pmap_info->mapid = thread_current()->mapid;
+    pmap_info->spte = spte;
+    list_push_back(&thread_current()->map_infos, &pmap_info->elem);
+  } 
+
+  thread_current()->mapid++;
+  f->eax = pmap_info->mapid;
+  printf("mmap mapid: %d\n", pmap_info->mapid);
+  printf("mmap END\n");
+}
+
+/*---------------------------------------------------------------------------------------*/
+static void syscall_munmap(struct intr_frame *f)
+{
+printf("syscall munmap!\n");
+  if(!is_valid_ptr(f->esp+4, 4))
+    return error_exit();
+
+  int mapping = *(int *)(f->esp+4);
+  printf("mapping: %d\n", mapping);
+
+  munmap(mapping);
+printf("unmap END\n");
+}
+
+/*---------------------------------------------------------------------------------------*/
+void munmap(int mapid)
+{
+  struct map_info *pmap_info;
+  struct spage_table_entry* spte;
+  struct thread* curr = thread_current();
+  struct list_elem* le;
+  struct file* file = NULL;
+  bool find = false;
+
+  printf("munmap mapid: %d\n", mapid);
+
+  for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); le = list_next(le)){
+printf("a");
+    pmap_info = list_entry(le, struct map_info, elem);
+    if(pmap_info->mapid == mapid){
+      spte = pmap_info->spte;
+      if(file == NULL){
+        find = true;
+        file = spte->file;
+      }
+      /* TODO
+         case 1) 메모리에 올려져 있다.
+           case 1-1) dirty : 파일에 쓰고 frame 비우기
+           case 1-2) not dirty : frame 비우기
+         case 2) 메모리에 안 올려져 있다. : 넘어감.
+      */
+      if(spte->kpage != NULL){
+        if(pagedir_is_dirty(curr->pagedir, spte->upage)){
+          sema_down(&filesys_sema);
+          file_write_at(spte->file, spte->upage, spte->read_bytes, spte->offset);
+          sema_up(&filesys_sema);
+        }
+        frametbl_free_frame(spte->kpage);
+        pagedir_clear_page(curr->pagedir, spte->upage);
+        hash_delete(&curr->spagetbl, &spte->elem);
+      }
+      list_remove(&pmap_info->elem);
+      free(spte);
+      free(pmap_info);
+    }
+    else if(find)
+      break;
+  }
+
+  /* 파일 닫기 */
+  if(file != NULL){
+    sema_down(&filesys_sema);
+    file_close(file);
+    sema_up(&filesys_sema);
+  }
+}
 
 /*---------------------------------------------------------------------------------------*/
 
@@ -493,6 +669,10 @@ syscall_handler (struct intr_frame *f UNUSED)
     case SYS_CLOSE:
       syscall_close(f);
       break;
+    case SYS_MMAP:
+      syscall_mmap(f);
+    case SYS_MUNMAP:
+      syscall_munmap(f);
     default:
       return error_exit();
   }
