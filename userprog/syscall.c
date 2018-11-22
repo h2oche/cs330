@@ -538,22 +538,22 @@ static void syscall_mmap(struct intr_frame *f)
 
   thread_current()->mapid++;
   f->eax = pmap_info->mapid;
-  printf("mmap mapid: %d\n", pmap_info->mapid);
-  printf("mmap END\n");
+//  printf("mmap mapid: %d\n", pmap_info->mapid);
+//  printf("mmap END\n");
 }
 
 /*---------------------------------------------------------------------------------------*/
 static void syscall_munmap(struct intr_frame *f)
 {
-printf("syscall munmap!\n");
+//printf("syscall munmap!\n");
   if(!is_valid_ptr(f->esp+4, 4))
     return error_exit();
 
   int mapping = *(int *)(f->esp+4);
-  printf("mapping: %d\n", mapping);
+//  printf("mapping: %d\n", mapping);
 
   munmap(mapping);
-printf("unmap END\n");
+//printf("unmap END\n");
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -566,10 +566,10 @@ void munmap(int mapid)
   struct file* file = NULL;
   bool find = false;
 
-  printf("munmap mapid: %d\n", mapid);
+//  printf("munmap mapid: %d\n", mapid);
 
   for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); le = list_next(le)){
-printf("a");
+//printf("a");
     pmap_info = list_entry(le, struct map_info, elem);
     if(pmap_info->mapid == mapid){
       spte = pmap_info->spte;
@@ -671,8 +671,10 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
     case SYS_MMAP:
       syscall_mmap(f);
+      break;
     case SYS_MUNMAP:
       syscall_munmap(f);
+      break;
     default:
       return error_exit();
   }

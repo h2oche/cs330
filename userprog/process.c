@@ -291,7 +291,7 @@ process_exit (void)
   printf("%s: exit(%d)\n", curr->name, exit_status);
 
   /* TODO mmap 없애기 */
-//  destroy_mmap();
+  destroy_mmap();
 
   /* TODO 열었던 파일 모두 닫기, child_info 제거 */
   destroy_fd_infos(curr);
