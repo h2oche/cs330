@@ -16,6 +16,7 @@
 #include "vm/frametbl.h"
 #include "lib/round.h"
 #include "userprog/pagedir.h"
+#include <round.h>
 
 //struct semaphore filesys_sema;
 static void syscall_handler (struct intr_frame *);
@@ -485,8 +486,8 @@ static void syscall_mmap(struct intr_frame *f)
   }
 
 
-  uint32_t read_bytes = ROUND_UP(file_len, PGSIZE);
-  uint32_t zero_bytes = 0;
+  uint32_t read_bytes = file_len;
+  uint32_t zero_bytes = ROUND_UP(file_len, PGSIZE) - read_bytes;
   struct spage_table_entry* spte = NULL;
   off_t ofs = 0;
   struct map_info* pmap_info = NULL;
@@ -568,9 +569,12 @@ void munmap(int mapid)
 
 //  printf("munmap mapid: %d\n", mapid);
 
-  for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); le = list_next(le)){
+  for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); ){
 //printf("a");
     pmap_info = list_entry(le, struct map_info, elem);
+
+    le = list_next(le);
+
     if(pmap_info->mapid == mapid){
       spte = pmap_info->spte;
       if(file == NULL){

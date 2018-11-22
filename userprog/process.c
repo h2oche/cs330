@@ -785,9 +785,11 @@ destroy_mmap()
   struct file* file = NULL;
   int mapid = 0;
 
-  for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); le = list_next(le)){
+  for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); ){
 //    printf("in for loop\n");
     pmap_info = list_entry(le, struct map_info, elem);
+
+    le = list_next(le);
 
     spte = pmap_info->spte;
  
