@@ -16,6 +16,7 @@
 #include "vm/frametbl.h"
 #include "lib/round.h"
 #include "userprog/pagedir.h"
+#include <round.h>
 
 //struct semaphore filesys_sema;
 static void syscall_handler (struct intr_frame *);
@@ -565,11 +566,13 @@ static void syscall_mmap(struct intr_frame *f)
 /*---------------------------------------------------------------------------------------*/
 static void syscall_munmap(struct intr_frame *f)
 {
+
 // printf("syscall munmap!\n");
   if(!is_valid_ptr(f->esp+4, 4))
     return error_exit();
 
   int mapid = *(int *)(f->esp+4);
+
   struct map_info *pmap_info;
   struct spage_table_entry* spte;
   struct thread* curr = thread_current();
@@ -589,6 +592,7 @@ static void syscall_munmap(struct intr_frame *f)
            e = ne)
     {
       ne = list_next(e);
+
       /* TODO
         case 1) 메모리에 올려져 있다.
           case 1-1) dirty : 파일에 쓰고 frame 비우기
@@ -633,64 +637,7 @@ static void syscall_munmap(struct intr_frame *f)
     return;
   }
   f->eax = 0;
-  
-// printf("unmap END\n");
 }
-
-/*---------------------------------------------------------------------------------------*/
-// void munmap(int mapid)
-// {
-//   struct map_info *pmap_info;
-//   struct spage_table_entry* spte;
-//   struct thread* curr = thread_current();
-//   struct list_elem* le;
-//   struct file* file = NULL;
-//   bool find = false;
-
-//   printf("munmap mapid: %d\n", mapid);
-
-//   for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); le = list_next(le)){
-// printf("a");
-//     pmap_info = list_entry(le, struct map_info, elem);
-//     if(pmap_info->mapid == mapid){
-//       spte = pmap_info->spte;
-//       if(file == NULL){
-//         find = true;
-//         file = spte->file;
-//       }
-//       /* TODO
-//          case 1) 메모리에 올려져 있다.
-//            case 1-1) dirty : 파일에 쓰고 frame 비우기
-//            case 1-2) not dirty : frame 비우기
-//          case 2) 메모리에 안 올려져 있다. : 넘어감.
-//       */
-//       if(spte->kpage != NULL){
-//         if(pagedir_is_dirty(curr->pagedir, spte->upage)){
-//           sema_down(&filesys_sema);
-//           file_write_at(spte->file, spte->upage, spte->read_bytes, spte->offset);
-//           sema_up(&filesys_sema);
-//         }
-//         frametbl_free_frame(spte->kpage);
-//         pagedir_clear_page(curr->pagedir, spte->upage);
-//         hash_delete(&curr->spagetbl, &spte->elem);
-//       }
-//       list_remove(&pmap_info->elem);
-//       free(spte);
-//       free(pmap_info);
-//     }
-//     else if(find)
-//       break;
-//   }
-
-//   /* 파일 닫기 */
-//   if(file != NULL){
-//     sema_down(&filesys_sema);
-//     file_close(file);
-//     sema_up(&filesys_sema);
-//   }
-// }
-
-/*---------------------------------------------------------------------------------------*/
 
 void
 syscall_init (void) 

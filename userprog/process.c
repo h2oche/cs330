@@ -352,7 +352,7 @@ process_exit (void)
   printf("%s: exit(%d)\n", curr->name, exit_status);
 
   /* TODO mmap 없애기 */
-//  destroy_mmap();
+  destroy_mmap();
 
   /* TODO 열었던 파일 모두 닫기, child_info, map_info 제거 */
   destroy_fd_infos(curr);
@@ -834,62 +834,4 @@ install_page (void *upage, void *kpage, bool writable)
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
 }
 
-
-/*---------------------------------------------------------------------*/
-// static void
-// destroy_mmap()
-// {
-//   struct map_info *pmap_info;
-//   struct spage_table_entry* spte;
-//   struct thread* curr = thread_current();
-//   struct list_elem* le;
-//   struct file* file = NULL;
-//   int mapid = 0;
-
-//   for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); le = list_next(le)){
-// //    printf("in for loop\n");
-//     pmap_info = list_entry(le, struct map_info, elem);
-
-//     spte = pmap_info->spte;
- 
-//     if(pmap_info->mapid != mapid){
-//       if(file != NULL){
-//         sema_down(&filesys_sema);
-//         file_close(file);
-//         sema_up(&filesys_sema);
-//       }
-//       mapid = pmap_info->mapid;
-//       file = spte->file;
-//     }
-
-//    /* TODO
-//        case 1) 메모리에 올려져 있다.
-//          case 1-1) dirty : 파일에 쓰고 frame 비우기
-//          case 1-2) not dirty : frame 비우기
-//        case 2) 메모리에 안 올려져 있다. : 넘어감.
-//     */
-//     if(spte->kpage != NULL){
-//       if(pagedir_is_dirty(curr->pagedir, spte->upage)){
-//         sema_down(&filesys_sema);
-//         file_write_at(spte->file, spte->upage, spte->read_bytes, spte->offset);
-//         sema_up(&filesys_sema);
-//       }
-//       frametbl_free_frame(spte->kpage);
-//       pagedir_clear_page(curr->pagedir, spte->upage);
-//       hash_delete(&curr->spagetbl, &spte->elem);
-//     }
-//     list_remove(&pmap_info->elem);
-//     free(spte);
-//     free(pmap_info);
-
-//   }
-
-//   if(file != NULL){
-//     sema_down(&filesys_sema);
-//     file_close(file);
-//     sema_up(&filesys_sema);
-//   }
-
-// //printf("ASDF\n");
-// }
 
