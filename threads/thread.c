@@ -452,7 +452,7 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init(&t->fd_infos);
   list_init(&t->map_infos);
   t->next_fd = 3;
-  t->mapid = 1;
+  t->next_mapid = 1;
   t->exit_status = -1;
   t->exe_file = NULL;
 

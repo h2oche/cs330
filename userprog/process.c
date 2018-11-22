@@ -28,7 +28,6 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
-static void destroy_mmap(void);
 
 struct child_info
 {
@@ -140,6 +139,68 @@ destroy_fd_infos(struct thread* t)
   }
 }
 
+/*----------------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------------*/
+/* map_info 모두 제거하는 함수( syscall_munmap과 거의 유사) */
+static void
+destroy_mmap(struct thread* t) {
+  struct map_info *pmap_info;
+  struct spage_table_entry* spte;
+  struct thread* curr = t;
+  struct list_elem* me;
+  struct list_elem* e;
+  struct list_elem* nme;
+  struct list_elem* ne;
+  struct file* file = NULL;
+
+  for (me = list_begin (&curr->map_infos); me != list_end (&curr->map_infos);
+           me = nme)
+  {
+    nme = list_next(me);
+    pmap_info = list_entry(me, struct map_info, elem);
+    for (e = list_begin (&pmap_info->spte_list); e != list_end (&pmap_info->spte_list);
+           e = ne)
+    {
+      ne = list_next(e);
+      /* TODO
+        case 1) 메모리에 올려져 있다.
+          case 1-1) dirty : 파일에 쓰고 frame 비우기
+          case 1-2) not dirty : frame 비우기
+        case 2) 메모리에 안 올려져 있다. : 넘어감.
+      */
+      spte = list_entry (e, struct spage_table_entry, list_elem);
+
+      if(spte->kpage != NULL) {
+        if(pagedir_is_dirty(curr->pagedir, spte->upage)){
+          sema_down(&filesys_sema);
+          file_write_at(spte->file, spte->upage, spte->read_bytes, spte->offset);
+          sema_up(&filesys_sema);
+        }
+        frametbl_free_frame(spte->kpage);
+        pagedir_clear_page(curr->pagedir, spte->upage);
+      }
+
+      if(file == NULL)
+        file = spte->file;
+
+      /* update spagetbl */
+      hash_delete(&curr->spagetbl, &spte->elem);
+      list_remove(&spte->list_elem);
+      free(spte);
+    }
+    
+    /* resource 정리 */
+    list_remove(&pmap_info->elem);
+    free(pmap_info);
+
+    sema_down(&filesys_sema);
+    file_close(file);
+    sema_up(&filesys_sema);
+    
+    file = NULL;
+  }
+}
 /*----------------------------------------------------------------------------*/
 
 
@@ -293,9 +354,10 @@ process_exit (void)
   /* TODO mmap 없애기 */
 //  destroy_mmap();
 
-  /* TODO 열었던 파일 모두 닫기, child_info 제거 */
+  /* TODO 열었던 파일 모두 닫기, child_info, map_info 제거 */
   destroy_fd_infos(curr);
   destroy_children(curr);
+  destroy_mmap(curr);
 
   if(curr->exe_file != NULL){
     file_allow_write(curr->exe_file);
@@ -773,62 +835,61 @@ install_page (void *upage, void *kpage, bool writable)
 }
 
 
-
 /*---------------------------------------------------------------------*/
-static void
-destroy_mmap()
-{
-  struct map_info *pmap_info;
-  struct spage_table_entry* spte;
-  struct thread* curr = thread_current();
-  struct list_elem* le;
-  struct file* file = NULL;
-  int mapid = 0;
+// static void
+// destroy_mmap()
+// {
+//   struct map_info *pmap_info;
+//   struct spage_table_entry* spte;
+//   struct thread* curr = thread_current();
+//   struct list_elem* le;
+//   struct file* file = NULL;
+//   int mapid = 0;
 
-  for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); le = list_next(le)){
-//    printf("in for loop\n");
-    pmap_info = list_entry(le, struct map_info, elem);
+//   for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); le = list_next(le)){
+// //    printf("in for loop\n");
+//     pmap_info = list_entry(le, struct map_info, elem);
 
-    spte = pmap_info->spte;
+//     spte = pmap_info->spte;
  
-    if(pmap_info->mapid != mapid){
-      if(file != NULL){
-        sema_down(&filesys_sema);
-        file_close(file);
-        sema_up(&filesys_sema);
-      }
-      mapid = pmap_info->mapid;
-      file = spte->file;
-    }
+//     if(pmap_info->mapid != mapid){
+//       if(file != NULL){
+//         sema_down(&filesys_sema);
+//         file_close(file);
+//         sema_up(&filesys_sema);
+//       }
+//       mapid = pmap_info->mapid;
+//       file = spte->file;
+//     }
 
-   /* TODO
-       case 1) 메모리에 올려져 있다.
-         case 1-1) dirty : 파일에 쓰고 frame 비우기
-         case 1-2) not dirty : frame 비우기
-       case 2) 메모리에 안 올려져 있다. : 넘어감.
-    */
-    if(spte->kpage != NULL){
-      if(pagedir_is_dirty(curr->pagedir, spte->upage)){
-        sema_down(&filesys_sema);
-        file_write_at(spte->file, spte->upage, spte->read_bytes, spte->offset);
-        sema_up(&filesys_sema);
-      }
-      frametbl_free_frame(spte->kpage);
-      pagedir_clear_page(curr->pagedir, spte->upage);
-      hash_delete(&curr->spagetbl, &spte->elem);
-    }
-    list_remove(&pmap_info->elem);
-    free(spte);
-    free(pmap_info);
+//    /* TODO
+//        case 1) 메모리에 올려져 있다.
+//          case 1-1) dirty : 파일에 쓰고 frame 비우기
+//          case 1-2) not dirty : frame 비우기
+//        case 2) 메모리에 안 올려져 있다. : 넘어감.
+//     */
+//     if(spte->kpage != NULL){
+//       if(pagedir_is_dirty(curr->pagedir, spte->upage)){
+//         sema_down(&filesys_sema);
+//         file_write_at(spte->file, spte->upage, spte->read_bytes, spte->offset);
+//         sema_up(&filesys_sema);
+//       }
+//       frametbl_free_frame(spte->kpage);
+//       pagedir_clear_page(curr->pagedir, spte->upage);
+//       hash_delete(&curr->spagetbl, &spte->elem);
+//     }
+//     list_remove(&pmap_info->elem);
+//     free(spte);
+//     free(pmap_info);
 
-  }
+//   }
 
-  if(file != NULL){
-    sema_down(&filesys_sema);
-    file_close(file);
-    sema_up(&filesys_sema);
-  }
+//   if(file != NULL){
+//     sema_down(&filesys_sema);
+//     file_close(file);
+//     sema_up(&filesys_sema);
+//   }
 
-//printf("ASDF\n");
-}
+// //printf("ASDF\n");
+// }
 

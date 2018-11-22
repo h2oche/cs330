@@ -82,10 +82,12 @@ spagetbl_load(struct spage_table_entry* spte)
       sema_up(&filesys_sema);
       memset(frame + spte->read_bytes, 0, spte->zero_bytes);
 
+      /* pte update */
       if(!install_page(spte->upage, frame, spte->writable)){
         frametbl_free_frame(frame);
         return false;
       }
+      /* spte update */
       spte->kpage = frame;
       frametbl_load_complete(frame);
       return true;
@@ -96,10 +98,12 @@ spagetbl_load(struct spage_table_entry* spte)
       if(frame == NULL) return false;
 
       memset(frame, 0, PGSIZE); // frame 0으로 채우기
+      /* pte update */
       if(!install_page(spte->upage, frame, spte->writable)){
         frametbl_free_frame(frame);
         return false;
       }
+      /* spte update */
       spte->kpage = frame;
       frametbl_load_complete(frame);
       return true;

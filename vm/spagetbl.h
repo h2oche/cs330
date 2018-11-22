@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <hash.h>
+#include <list.h>
 
 /* indicate where page is currently located */
 enum spte_flags
@@ -18,6 +19,7 @@ struct spage_table_entry {
     void* kpage;                    /* user page에 맵핑된 physical page, memory에 없으면 NULL */
 
     struct hash_elem elem;          /* Hash element */
+    struct list_elem list_elem;     /* list element */
 
     enum spte_flags type;           /* type */
 

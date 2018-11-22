@@ -440,15 +440,16 @@ static void syscall_close(struct intr_frame *f)
 static void syscall_mmap(struct intr_frame *f)
 {
 //printf("syscall mmap!\n");
-  if(!is_valid_ptr(f->esp+4, 4) || !is_valid_ptr(f->esp+8, 4)){
-    f->eax = -1;
-    return;
-  }
+  if(!is_valid_ptr(f->esp+4, 4) || !is_valid_ptr(f->esp+8, 4))
+    error_exit();
 
   int fd = *(int *)(f->esp+4);
   void *addr = *(void **)(f->esp+8);
 
-  /* TODO fd 관련 fail */
+  /* TODO fd 관련 fail
+    case 1) fd 가 stdin or stdout
+    case 2) 존재하지 않는 fd
+    case 3) file size == 0 */
   if(fd==0 || fd==1){
     f->eax = -1;
     return;
@@ -478,26 +479,63 @@ static void syscall_mmap(struct intr_frame *f)
   }
   sema_up(&filesys_sema);
 
-  /* TODO addr 관련 fail */
+  /* TODO addr 관련 fail
+    case 1) addr == 0
+    case 2) addr 이 not page-aligned
+    case 3) 기존 addresss map 과 겹쳐질 떄 */
   if(addr==0 || ((uint32_t)addr%PGSIZE) != 0){
     f->eax = -1;
     return;
   }
 
+  uint32_t* temp_addr = addr;
+  struct thread* curr = thread_current();
 
-  uint32_t read_bytes = ROUND_UP(file_len, PGSIZE);
-  uint32_t zero_bytes = 0;
-  struct spage_table_entry* spte = NULL;
-  off_t ofs = 0;
+  while(temp_addr - (uint32_t*)addr < file_len) {
+    if(spagetbl_get_spte(&curr->spagetbl, temp_addr) != NULL) {
+      f->eax = -1;
+      return;
+    }
+    temp_addr += PGSIZE;
+  }
+
+  /* TODO mmap */
   struct map_info* pmap_info = NULL;
+  if( (pmap_info = (struct map_info*)malloc(sizeof(struct map_info))) == NULL ) {
+    f -> eax = -1;
+    return;
+  }
+  pmap_info->mapid = curr->next_mapid++;
+  list_init(&pmap_info->spte_list);
 
-  while(read_bytes>0||zero_bytes>0){
+  struct list_elem* e = NULL;
+  struct list_elem* ne = NULL;
+  struct spage_table_entry* spte = NULL;
+  uint32_t read_bytes = file_len;
+  off_t ofs = 0;
+
+  while(read_bytes>0){
     uint32_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
     uint32_t page_zero_bytes = PGSIZE - page_read_bytes;
 
     /* TODO spage_table_entry 만들어서 넣기 */
     if((spte = (struct spage_table_entry*)malloc(sizeof(struct spage_table_entry))) == NULL){
-      munmap(thread_current()->mapid);
+      /* TODO fail시에 map_info*, 그 전에 만들었던 spte* free, file close */
+      for (e = list_begin (&pmap_info->spte_list); e != list_end (&pmap_info->spte_list);
+           e = ne)
+      {
+        ne = list_next(e);
+        spte = list_entry (e, struct spage_table_entry, list_elem);
+        hash_delete(&curr->spagetbl, &spte->elem);
+        list_remove(&spte->list_elem);
+        free(spte);
+      }
+
+      sema_down(&filesys_sema);
+      file_close(file);
+      sema_up(&filesys_sema);
+
+      free(pmap_info);
       f->eax = -1;
       return;
     }
@@ -511,103 +549,146 @@ static void syscall_mmap(struct intr_frame *f)
     spte->writable = true;
     spte->file = file;
 
-    if(hash_insert(&thread_current()->spagetbl, &spte->elem)){
-      // 이미 있는 경우
-      free(spte);
-      munmap(thread_current()->mapid);
-      f->eax = -1;
-      return;
-    }
+    hash_insert(&curr->spagetbl, &spte->elem);
+    list_push_front(&pmap_info->spte_list, &spte->list_elem);
+
     /* Advance. */
     read_bytes -= page_read_bytes;
-    zero_bytes -= page_zero_bytes;
-    ofs += page_read_bytes;
+    ofs += PGSIZE;
     addr += PGSIZE;
+  }
 
-
-    /* TODO map info 만들어서 thread의 map_infos에 저장 */
-    if((pmap_info = malloc(sizeof(struct map_info))) == NULL){
-      munmap(thread_current()->mapid);
-      f->eax = -1;
-      return;
-    }
-    pmap_info->mapid = thread_current()->mapid;
-    pmap_info->spte = spte;
-    list_push_back(&thread_current()->map_infos, &pmap_info->elem);
-  } 
-
-  thread_current()->mapid++;
+  list_push_back(&thread_current()->map_infos, &pmap_info->elem);
   f->eax = pmap_info->mapid;
-  printf("mmap mapid: %d\n", pmap_info->mapid);
-  printf("mmap END\n");
 }
 
 /*---------------------------------------------------------------------------------------*/
 static void syscall_munmap(struct intr_frame *f)
 {
-printf("syscall munmap!\n");
+// printf("syscall munmap!\n");
   if(!is_valid_ptr(f->esp+4, 4))
     return error_exit();
 
-  int mapping = *(int *)(f->esp+4);
-  printf("mapping: %d\n", mapping);
-
-  munmap(mapping);
-printf("unmap END\n");
-}
-
-/*---------------------------------------------------------------------------------------*/
-void munmap(int mapid)
-{
+  int mapid = *(int *)(f->esp+4);
   struct map_info *pmap_info;
   struct spage_table_entry* spte;
   struct thread* curr = thread_current();
-  struct list_elem* le;
+  struct list_elem* me;
+  struct list_elem* e;
+  struct list_elem* ne;
   struct file* file = NULL;
   bool find = false;
 
-  printf("munmap mapid: %d\n", mapid);
-
-  for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); le = list_next(le)){
-printf("a");
-    pmap_info = list_entry(le, struct map_info, elem);
-    if(pmap_info->mapid == mapid){
-      spte = pmap_info->spte;
-      if(file == NULL){
-        find = true;
-        file = spte->file;
-      }
+  for (me = list_begin (&curr->map_infos); me != list_end (&curr->map_infos);
+           me = list_next (me))
+  {
+    pmap_info = list_entry(me, struct map_info, elem);
+    if(mapid != pmap_info->mapid) continue;
+    
+    for (e = list_begin (&pmap_info->spte_list); e != list_end (&pmap_info->spte_list);
+           e = ne)
+    {
+      ne = list_next(e);
       /* TODO
-         case 1) 메모리에 올려져 있다.
-           case 1-1) dirty : 파일에 쓰고 frame 비우기
-           case 1-2) not dirty : frame 비우기
-         case 2) 메모리에 안 올려져 있다. : 넘어감.
+        case 1) 메모리에 올려져 있다.
+          case 1-1) dirty : 파일에 쓰고 frame 비우기
+          case 1-2) not dirty : frame 비우기
+        case 2) 메모리에 안 올려져 있다. : 넘어감.
       */
-      if(spte->kpage != NULL){
+      spte = list_entry (e, struct spage_table_entry, list_elem);
+
+      if(spte->kpage != NULL) {
         if(pagedir_is_dirty(curr->pagedir, spte->upage)){
           sema_down(&filesys_sema);
           file_write_at(spte->file, spte->upage, spte->read_bytes, spte->offset);
           sema_up(&filesys_sema);
         }
-        frametbl_free_frame(spte->kpage);
         pagedir_clear_page(curr->pagedir, spte->upage);
-        hash_delete(&curr->spagetbl, &spte->elem);
+        frametbl_free_frame(spte->kpage);
       }
-      list_remove(&pmap_info->elem);
-      free(spte);
-      free(pmap_info);
-    }
-    else if(find)
-      break;
-  }
+      
+      if(file == NULL)
+        file = spte->file;
 
-  /* 파일 닫기 */
-  if(file != NULL){
+      /* update spagetbl */
+      hash_delete(&curr->spagetbl, &spte->elem);
+      list_remove(&spte->list_elem);
+      free(spte);
+    }
+    
+    /* resource 정리 */
+    list_remove(&pmap_info->elem);
+    free(pmap_info);
+    
     sema_down(&filesys_sema);
     file_close(file);
     sema_up(&filesys_sema);
+
+    find = true;
+    break;
   }
+
+  if(!find) {
+    f->eax = -1;
+    return;
+  }
+  f->eax = 0;
+  
+// printf("unmap END\n");
 }
+
+/*---------------------------------------------------------------------------------------*/
+// void munmap(int mapid)
+// {
+//   struct map_info *pmap_info;
+//   struct spage_table_entry* spte;
+//   struct thread* curr = thread_current();
+//   struct list_elem* le;
+//   struct file* file = NULL;
+//   bool find = false;
+
+//   printf("munmap mapid: %d\n", mapid);
+
+//   for(le = list_begin(&curr->map_infos); le != list_end(&curr->map_infos); le = list_next(le)){
+// printf("a");
+//     pmap_info = list_entry(le, struct map_info, elem);
+//     if(pmap_info->mapid == mapid){
+//       spte = pmap_info->spte;
+//       if(file == NULL){
+//         find = true;
+//         file = spte->file;
+//       }
+//       /* TODO
+//          case 1) 메모리에 올려져 있다.
+//            case 1-1) dirty : 파일에 쓰고 frame 비우기
+//            case 1-2) not dirty : frame 비우기
+//          case 2) 메모리에 안 올려져 있다. : 넘어감.
+//       */
+//       if(spte->kpage != NULL){
+//         if(pagedir_is_dirty(curr->pagedir, spte->upage)){
+//           sema_down(&filesys_sema);
+//           file_write_at(spte->file, spte->upage, spte->read_bytes, spte->offset);
+//           sema_up(&filesys_sema);
+//         }
+//         frametbl_free_frame(spte->kpage);
+//         pagedir_clear_page(curr->pagedir, spte->upage);
+//         hash_delete(&curr->spagetbl, &spte->elem);
+//       }
+//       list_remove(&pmap_info->elem);
+//       free(spte);
+//       free(pmap_info);
+//     }
+//     else if(find)
+//       break;
+//   }
+
+//   /* 파일 닫기 */
+//   if(file != NULL){
+//     sema_down(&filesys_sema);
+//     file_close(file);
+//     sema_up(&filesys_sema);
+//   }
+// }
 
 /*---------------------------------------------------------------------------------------*/
 
@@ -671,8 +752,10 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
     case SYS_MMAP:
       syscall_mmap(f);
+      break;
     case SYS_MUNMAP:
       syscall_munmap(f);
+      break;
     default:
       return error_exit();
   }

@@ -114,10 +114,10 @@ struct thread
 
     /* VM */
     struct hash spagetbl;
-    uint8_t *esp;
-
     struct list map_infos;
-    int mapid;
+    int next_mapid;
+    
+    uint8_t *esp;
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
@@ -133,7 +133,7 @@ struct fd_info
 struct map_info
 {
   int mapid;
-  struct spage_table_entry* spte;
+  struct list spte_list;
   struct list_elem elem;
 };
 
