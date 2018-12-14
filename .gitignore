@@ -13,11 +13,14 @@ vm/build/
 vm/bochsout.txt
 vm/bochsrc.txt
 
+filesys/build/
+filesys/bochsout.txt
+filesys/bochsrc.txt
+
 sftp-config.json
 
 bochs/
 examples/
-filesys/
 misc/
 tests/
 utils/
