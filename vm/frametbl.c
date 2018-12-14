@@ -90,15 +90,16 @@ frametbl_evict()
         sema_up(&filesys_sema);
       }
       spte->kpage = NULL;
+      /* pte update */
+        pagedir_clear_page(fte->pagedir, fte->vaddr);
     }
     else{
+        /* pte update */
+        pagedir_clear_page(fte->pagedir, fte->vaddr);
       /* spte update */
       spte->swap_sec_no = swap_out(fte->frame);
       spte->type = SPG_SWAP;
     }
-
-    /* pte update */
-    pagedir_clear_page(fte->pagedir, fte->vaddr);
 
     /* swap out 된 frame 비우기 */
     ASSERT(fte->frame != NULL);
