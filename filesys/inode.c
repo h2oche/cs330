@@ -265,7 +265,7 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
       /* TODO bounce buffer 대신 cache에 씀 */
       buffer_cache_write(sector_idx, buffer + bytes_written, sector_ofs, chunk_size);
-
+      // PANIC("after write");
       /* Advance. */
       size -= chunk_size;
       offset += chunk_size;

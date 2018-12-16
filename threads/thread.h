@@ -92,6 +92,9 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
 
+    /* timer */
+    int64_t wakeup_ticks;
+
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 

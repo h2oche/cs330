@@ -2,6 +2,7 @@
 #include <debug.h>
 #include <inttypes.h>
 #include <round.h>
+#include <list.h>
 #include <stdio.h>
 #include "threads/interrupt.h"
 #include "threads/io.h"
@@ -28,6 +29,9 @@ static intr_handler_func timer_interrupt;
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
+static bool is_less(const struct list_elem *, const struct list_elem *, void *);
+
+static struct list sleep_list;
 
 /* Sets up the 8254 Programmable Interval Timer (PIT) to
    interrupt PIT_FREQ times per second, and registers the
@@ -44,6 +48,8 @@ timer_init (void)
   outb (0x40, count >> 8);
 
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+
+  list_init(&sleep_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -99,8 +105,13 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  
+  enum intr_level temp_level = intr_disable(); 
+  struct thread *curr = thread_current();
+  curr->wakeup_ticks = start+ticks;
+  list_insert_ordered(&sleep_list, &curr->elem, is_less, NULL);  
+  thread_block();
+  intr_set_level(temp_level);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -136,6 +147,17 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+
+  struct thread *p;
+  while(list_tail(&sleep_list) != list_begin(&sleep_list)){ // list에 thread가 존재할 경우
+    p = list_entry(list_begin(&sleep_list), struct thread, elem);
+    if(p->wakeup_ticks <= timer_ticks()){ // wakeup_ticks가 현재 ticks보다 작은 경우
+      list_remove(&p->elem); // list에서 없앰
+      thread_unblock(p);  // 다 깨움
+    }
+    else break; // sort 되어 있으므로 나머지 애들은 더 자야함
+  }
+
   thread_tick ();
 }
 
@@ -202,3 +224,15 @@ real_time_sleep (int64_t num, int32_t denom)
     }
 }
 
+/* list_insert_ordered() 함수에 사용될 함수 */
+static bool
+is_less (const struct list_elem *left, const struct list_elem *right, void *empty)
+{
+  const struct thread *l = list_entry(left, struct thread, elem);
+  const struct thread *r = list_entry(right, struct thread, elem);
+   if(l->wakeup_ticks < r->wakeup_ticks)
+    return true;
+  else if(l->wakeup_ticks == r->wakeup_ticks && l->priority >= r->priority)
+    return true;
+  return false;
+}

@@ -348,8 +348,9 @@ process_exit (void)
   int exit_status = curr->exit_status;
   struct child_info *c = get_child_info(curr->parent, curr->tid);
 
-  /* TODO 종료 메세지 */
-  printf("%s: exit(%d)\n", curr->name, exit_status);
+  /* TODO 종료 메세지(write-behind, read-ahead는 출력하지 않음) */
+  if(strcmp(curr->name, "read-ahead") != 0 && strcmp(curr->name, "write-behind") != 0)
+    printf("%s: exit(%d)\n", curr->name, exit_status);
 
   /* TODO 열었던 파일 모두 닫기, child_info, map_info 제거 */
   destroy_fd_infos(curr);

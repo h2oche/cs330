@@ -4,16 +4,21 @@
 #include "threads/thread.h"
 #include "threads/synch.h"
 #include "devices/disk.h"
+#include "devices/timer.h"
 #include "filesys/off_t.h"
+#include "filesys/filesys.h"
 #include <stddef.h>
 #include <string.h>
 
 struct buffer_cache_entry* buffer_cache;
 struct lock cache_lock;
-extern struct disk* filesys_disk;
 int needle = -1;
 
 void buffer_cache_select_victim(void);
+int get_next_needle(void);
+int buffer_cache_load(disk_sector_t); 
+static void func_read_ahead(void *);
+static void func_write_behind(void *);
 
 /*---------------------------------------------------------------------------------------*/
 int
@@ -27,6 +32,9 @@ get_next_needle(void) {
 void
 buffer_cache_init(void) {
   buffer_cache = (struct buffer_cache_entry*)calloc(BUFFER_CACHE_SIZE, sizeof(struct buffer_cache_entry));
+  if(buffer_cache == NULL)
+    PANIC("can't initialize buffer cache");
+
   lock_init(&cache_lock);
 
   int i = 0;
@@ -34,6 +42,11 @@ buffer_cache_init(void) {
     lock_init(&buffer_cache[i].lock);
     cond_init(&buffer_cache[i].load_cond);
   }
+
+  /* TODO 주기적으로 write-back하는 thread 생성 */
+  // thread_create("write-behind", PRI_DEFAULT, func_write_behind, NULL);
+
+  printf("buffer cache init...\n");
 }
 /*---------------------------------------------------------------------------------------*/
 
@@ -41,25 +54,24 @@ buffer_cache_init(void) {
 void
 buffer_cache_done(void) {
   int i = 0;
-  for(; i < BUFFER_CACHE_SIZE; i += 1) {
-    /* TODO dirty 일 경우 disk-write */
-    if(buffer_cache[i].dirty) {
-      //disk write
-    }
-  }
+  /* TODO dirty 일 경우 disk-write */
+  for(; i < BUFFER_CACHE_SIZE; i += 1)
+    if(buffer_cache[i].valid && buffer_cache[i].dirty)
+      disk_write(filesys_disk, buffer_cache[i].sector_idx, buffer_cache[i].data);
 }
 /*---------------------------------------------------------------------------------------*/
 
 /* TODO 
   - index of buffer_cache[idx].sector_idx == sector_idx ?
 */
+
 int
 buffer_cache_idx(disk_sector_t sector_idx) {
   int i = 0;
   for(; i < BUFFER_CACHE_SIZE; i += 1)
     if(buffer_cache[i].valid && buffer_cache[i].sector_idx == sector_idx)
-      return true;
-  return false;
+      return i;
+  return -1;
 }
 /*---------------------------------------------------------------------------------------*/
 
@@ -82,8 +94,10 @@ buffer_cache_empty_idx() {
     3. evict된 entry 초기화 후 return */
 
   struct buffer_cache_entry* victim = NULL;
+  int victim_idx;
   while(true) {
-    victim = &buffer_cache[get_next_needle()];
+    victim_idx = get_next_needle();
+    victim = &buffer_cache[victim_idx];
     if(victim->reference_cnt == 0) {
       if(victim->access) {
         victim->access = false;
@@ -95,6 +109,7 @@ buffer_cache_empty_idx() {
 
   /* cache -> disk */
   disk_write(filesys_disk, victim->sector_idx, victim->data);
+  // printf("victim : %d\n", victim_idx);
 
   /* cache entry 초기화 */
   victim->valid = false;
@@ -102,8 +117,9 @@ buffer_cache_empty_idx() {
   victim->dirty = false;
   victim->is_loaded = false;
   victim->reference_cnt = 0;
-  victim->sector_idx = 0;
+  victim->sector_idx = -1;
   memset(victim->data, 0, DISK_SECTOR_SIZE);
+  return victim_idx;
 }
 /*---------------------------------------------------------------------------------------*/
 
@@ -118,6 +134,7 @@ buffer_cache_load(disk_sector_t sector_idx) {
   lock_acquire(&cache_lock);
 
   int cache_idx = buffer_cache_idx(sector_idx);
+  // printf("buffer_cache_load->cache_idx : %d\n", cache_idx);
 
   if(cache_idx != -1) {
     buffer_cache[cache_idx].reference_cnt++;
@@ -127,6 +144,7 @@ buffer_cache_load(disk_sector_t sector_idx) {
   
   /* TODO 빈 entry 하나 가져와야 함 */
   int empty_idx = buffer_cache_empty_idx();
+  // printf("buffer_cache_load->empty_idx : %d\n", empty_idx);
 
   /* 빈 entry 초기화 */
   ce = &buffer_cache[empty_idx];
@@ -137,6 +155,7 @@ buffer_cache_load(disk_sector_t sector_idx) {
   ce->reference_cnt = 1;
 
   lock_release(&cache_lock);
+  // printf("buffer_cache_load lock released\n");
 
   lock_acquire(&ce->lock);
   disk_read(filesys_disk, sector_idx, ce->data);
@@ -144,6 +163,8 @@ buffer_cache_load(disk_sector_t sector_idx) {
 
   cond_broadcast(&ce->load_cond, &ce->lock);
   lock_release(&ce->lock);
+
+  // printf("buffer_cache load completed\n");
 
   return empty_idx;
 }
@@ -172,6 +193,7 @@ buffer_cache_load(disk_sector_t sector_idx) {
 void
 buffer_cache_read(disk_sector_t sector_idx, uint8_t* buffer, off_t sector_ofs, int chunk_size) {
   struct buffer_cache_entry* ce = NULL;
+  // printf("cache_read : %d\n", sector_idx);
 
   int cache_idx = buffer_cache_load(sector_idx);
 
@@ -204,9 +226,45 @@ buffer_cache_read(disk_sector_t sector_idx, uint8_t* buffer, off_t sector_ofs, i
     1. 새로운 thread 만듬
     2. disk[sector_idx + 1] -> buffer_cache 로 복사 (IO required) */
   lock_release(&cache_lock);
-  thread_create("read-ahead", PRI_DEFAULT, func_read_ahead, NULL);
+  disk_sector_t* next_sector_ptr = malloc(sizeof(disk_sector_t));
+  if(next_sector_ptr == NULL)
+    return;
+
+  *next_sector_ptr = sector_idx + 1;
+  thread_create("read-ahead", PRI_DEFAULT, func_read_ahead, next_sector_ptr);
 }
 /*---------------------------------------------------------------------------------------*/
+
+
+/*---------------------------------------------------------------------------------------*/
+/* TODO read_ahead 구현 */
+static void
+func_read_ahead(void * next_sector_ptr) {
+  ASSERT(next_sector_ptr != NULL);
+
+  disk_sector_t next_sector_idx = *(disk_sector_t*)next_sector_ptr;
+  free(next_sector_ptr);
+  // printf("read-ahead: %d\n", next_sector_idx);
+  
+  // lock_acquire(&cache_lock);
+  // int cache_idx = buffer_cache_idx(next_sector_idx);
+
+  // /* 이미 loading 된 경우 바로 return */
+  // if(cache_idx != -1) {
+  //   lock_release(&cache_lock);
+  //   return;
+  // }
+  // lock_release(&cache_lock);
+
+  /* read-ahead */
+  int cache_idx = buffer_cache_load(next_sector_idx);
+  lock_acquire(&cache_lock);
+  buffer_cache[cache_idx].reference_cnt--;
+  lock_release(&cache_lock);
+  // printf("read-ahead completed\n");
+}
+/*---------------------------------------------------------------------------------------*/
+
 
 /* TODO 
   - buffer_cache_load
@@ -219,10 +277,10 @@ buffer_cache_write(disk_sector_t sector_idx, uint8_t* buffer, off_t sector_ofs, 
   struct buffer_cache_entry* ce = NULL;
 
   int cache_idx = buffer_cache_load(sector_idx);
+  // printf("sector idx : %d\n", sector_idx);
+  // printf("cache idx : %d\n", cache_idx);
 
   ce = &buffer_cache[cache_idx];
-  ce->dirty = true;
-  ce->access = true;
 
   /* cache가 아직 load 안된 경우 기다려야함 */
   lock_acquire(&ce->lock);
@@ -234,7 +292,32 @@ buffer_cache_write(disk_sector_t sector_idx, uint8_t* buffer, off_t sector_ofs, 
   memcpy(ce->data + sector_ofs, buffer, chunk_size);
 
   lock_acquire(&cache_lock);
+  ce->dirty = true;
+  ce->access = true;
   ce->reference_cnt--;
   lock_release(&cache_lock);
+}
+/*---------------------------------------------------------------------------------------*/
+
+/*---------------------------------------------------------------------------------------*/
+/* TODO 주기적으로 write-back 구현 */
+static void
+func_write_behind(void* aux UNUSED) {
+  while(true) {
+    timer_sleep(10000);
+    int i = 0;
+    struct buffer_cache_entry* ce;
+
+    for(; i < BUFFER_CACHE_SIZE; i += 1) {
+      lock_acquire(&cache_lock);
+      
+      ce = &buffer_cache[i];
+      if(ce->valid && ce->is_loaded && ce->dirty) {
+        disk_write(filesys_disk, ce->sector_idx, ce->data);
+        ce->dirty = false;
+      }
+      lock_release(&cache_lock);
+    }
+  }
 }
 /*---------------------------------------------------------------------------------------*/

@@ -20,19 +20,20 @@ void
 filesys_init (bool format) 
 {
   filesys_disk = disk_get (0, 1);
+
   if (filesys_disk == NULL)
     PANIC ("hd0:1 (hdb) not present, file system initialization failed");
+
+  /* TODO buffer cache initialization */
+  buffer_cache_init();
 
   inode_init ();
   free_map_init ();
 
   if (format) 
     do_format ();
-
+  
   free_map_open ();
-
-  /* TODO buffer cache initialization */
-  buffer_cache_init();
 }
 
 /* Shuts down the file system module, writing any unwritten data
@@ -105,6 +106,7 @@ do_format (void)
 {
   printf ("Formatting file system...");
   free_map_create ();
+
   if (!dir_create (ROOT_DIR_SECTOR, 16))
     PANIC ("root directory creation failed");
   free_map_close ();
