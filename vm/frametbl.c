@@ -85,9 +85,7 @@ frametbl_evict()
     /* TODO MMAP인 경우, dirty면 파일에 써주기 */
     if(spte->type == SPG_MMAP){
       if(pagedir_is_dirty(fte->pagedir, spte->upage)){
-        sema_down(&filesys_sema);
         file_write_at(spte->file, spte->kpage, spte->read_bytes, spte->offset);
-        sema_up(&filesys_sema);
       }
       spte->kpage = NULL;
       /* pte update */

@@ -128,9 +128,7 @@ destroy_fd_infos(struct thread* t)
 
     /* 열러 있는 파일 닫기 */
     if(f->file != NULL){
-      sema_down(&filesys_sema);
       file_close(f->file);
-      sema_up(&filesys_sema);
     }
 
     /* 리스트에서 없애고 free */
@@ -173,9 +171,7 @@ destroy_mmap(struct thread* t) {
 
       if(spte->kpage != NULL) {
         if(pagedir_is_dirty(curr->pagedir, spte->upage)){
-          sema_down(&filesys_sema);
           file_write_at(spte->file, spte->upage, spte->read_bytes, spte->offset);
-          sema_up(&filesys_sema);
         }
         frametbl_free_frame(spte->kpage);
         pagedir_clear_page(curr->pagedir, spte->upage);
@@ -194,9 +190,7 @@ destroy_mmap(struct thread* t) {
     list_remove(&pmap_info->elem);
     free(pmap_info);
 
-    sema_down(&filesys_sema);
     file_close(file);
-    sema_up(&filesys_sema);
     
     file = NULL;
   }
@@ -359,9 +353,7 @@ process_exit (void)
 
   if(curr->exe_file != NULL){
     file_allow_write(curr->exe_file);
-    sema_down(&filesys_sema);
     file_close(curr->exe_file);
-    sema_up(&filesys_sema);
   }
 
   /* Destroy the current process's page directory and switch back
@@ -500,7 +492,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
-  sema_down(&filesys_sema);
 
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
@@ -615,7 +606,6 @@ load (const char *file_name, void (**eip) (void), void **esp)
     t->exe_file = file;
     file_deny_write(file);
   }
-  sema_up(&filesys_sema);
   return success;
 }
 

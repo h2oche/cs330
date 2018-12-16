@@ -154,19 +154,16 @@ static void syscall_exec(struct intr_frame *f)
   strlcpy (f_name, cmd_line, strlen(cmd_line)+1);
   f_name = strtok_r (f_name, " ", &save_ptr);
 
-  sema_down(&filesys_sema);
   struct file* file = filesys_open(f_name);
 
   free(f_name);
 
   if(file == NULL){
     f->eax = -1;
-    sema_up(&filesys_sema);
     return;
   }
 
   file_close(file);
-  sema_up(&filesys_sema);
     
   f->eax = process_execute(cmd_line);
 }
@@ -195,9 +192,7 @@ static void syscall_create(struct intr_frame *f)
 
   unsigned initial_size = *(unsigned *)(f->esp+8);
 
-  sema_down(&filesys_sema);
   f->eax = filesys_create(file, initial_size);
-  sema_up(&filesys_sema);
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -211,9 +206,7 @@ static void syscall_remove(struct intr_frame *f)
   if(!is_valid_string(file))
     return error_exit();
 
-  sema_down(&filesys_sema);
   f->eax = filesys_remove(file);
-  sema_up(&filesys_sema);
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -229,13 +222,11 @@ static void syscall_open(struct intr_frame *f)
 
   int fd = -1;
 
-  sema_down(&filesys_sema);
   struct file* open_file = filesys_open(file);
 
   /* process가 열 수 있는 파일 개수 제한 - FAQ */
   if(open_file == NULL || thread_current()->next_fd > 130){
     f->eax = fd;
-    sema_up(&filesys_sema);
     return;
   }
 
@@ -248,7 +239,6 @@ static void syscall_open(struct intr_frame *f)
   fd = pfd_info->fd;
   f->eax = fd;
 
-  sema_up(&filesys_sema);
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -271,11 +261,9 @@ static void syscall_filesize(struct intr_frame *f)
     return error_exit();
   }
 
-  sema_down(&filesys_sema);
 
   len = file_length(file);
   f->eax = len;
-  sema_up(&filesys_sema);
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -299,12 +287,10 @@ static void syscall_read(struct intr_frame *f)
   /* stdin 인 경우 */
   if(fd == 0){
     uint8_t* stdin_buf = (uint8_t *)buffer;
-    sema_down(&filesys_sema);
     for(i=0; i<size; i++){
       stdin_buf[i] = input_getc();
     }
     read_size = size;
-    sema_up(&filesys_sema);
   }
   else if(fd == 1){ /* stdout */
     return error_exit();
@@ -318,9 +304,7 @@ static void syscall_read(struct intr_frame *f)
     if(file == NULL){
       return error_exit();
     }
-    sema_down(&filesys_sema);
     read_size = file_read(file, buffer, size);
-    sema_up(&filesys_sema);
   }
 
   f->eax = read_size;
@@ -345,10 +329,8 @@ static void syscall_write(struct intr_frame *f)
  
   /* stdout 인 경우 */
   if(fd == 1){
-    sema_down(&filesys_sema);
     putbuf((char *)buffer, (size_t)size);
     write_size = (int)size;
-    sema_up(&filesys_sema);
   }
   else{
     struct fd_info *fd_info = get_fd_info(fd);
@@ -359,9 +341,7 @@ static void syscall_write(struct intr_frame *f)
     if(file == NULL){
       return error_exit();
     }
-    sema_down(&filesys_sema);
     write_size = file_write(file, buffer, size);
-    sema_up(&filesys_sema);
   }
 
   f->eax = write_size;
@@ -384,9 +364,7 @@ static void syscall_seek(struct intr_frame *f)
   if(file == NULL){
     return error_exit();
   }
-  sema_down(&filesys_sema);
   file_seek(file, position);
-  sema_up(&filesys_sema);
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -405,9 +383,7 @@ static void syscall_tell(struct intr_frame *f)
   if(file == NULL){
     return error_exit();
   }
-  sema_down(&filesys_sema);
   f->eax = file_tell(file);
-  sema_up(&filesys_sema);
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -431,10 +407,8 @@ static void syscall_close(struct intr_frame *f)
   if(file == NULL)
     return error_exit();
   
-  sema_down(&filesys_sema);
   file_close(file);
   fd_info->file = NULL;
-  sema_up(&filesys_sema);
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -462,23 +436,17 @@ static void syscall_mmap(struct intr_frame *f)
     return;
   }
 
-  sema_down(&filesys_sema);
   struct file* file = file_reopen(fd_info->file);
   if(file == NULL){
-    sema_up(&filesys_sema);
     f->eax = -1;
     return;
   }
-  sema_up(&filesys_sema);
 
   off_t file_len;
-  sema_down(&filesys_sema);
   if((file_len = file_length(file))==0){
-    sema_up(&filesys_sema);
     f->eax = -1;
     return;
   }
-  sema_up(&filesys_sema);
 
   /* TODO addr 관련 fail
     case 1) addr == 0
@@ -532,9 +500,7 @@ static void syscall_mmap(struct intr_frame *f)
         free(spte);
       }
 
-      sema_down(&filesys_sema);
       file_close(file);
-      sema_up(&filesys_sema);
 
       free(pmap_info);
       f->eax = -1;
@@ -603,9 +569,7 @@ static void syscall_munmap(struct intr_frame *f)
 
       if(spte->kpage != NULL) {
         if(pagedir_is_dirty(curr->pagedir, spte->upage)){
-          sema_down(&filesys_sema);
           file_write_at(spte->file, spte->upage, spte->read_bytes, spte->offset);
-          sema_up(&filesys_sema);
         }
         pagedir_clear_page(curr->pagedir, spte->upage);
         frametbl_free_frame(spte->kpage);
@@ -624,9 +588,7 @@ static void syscall_munmap(struct intr_frame *f)
     list_remove(&pmap_info->elem);
     free(pmap_info);
     
-    sema_down(&filesys_sema);
     file_close(file);
-    sema_up(&filesys_sema);
 
     find = true;
     break;
@@ -642,7 +604,6 @@ static void syscall_munmap(struct intr_frame *f)
 void
 syscall_init (void) 
 {
-  sema_init(&filesys_sema, 1);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 

@@ -71,15 +71,12 @@ spagetbl_load(struct spage_table_entry* spte)
       frame = frametbl_get_frame(PAL_USER, spte->upage);
       if(frame == NULL) return false;
 
-      sema_down(&filesys_sema);
       // 파일 읽어서 frame에 쓰기
       if(file_read_at(spte->file, frame, spte->read_bytes, spte->offset) != (int)spte->read_bytes)
       {
-        sema_up(&filesys_sema);
         frametbl_free_frame(frame);
         return false;
       }
-      sema_up(&filesys_sema);
       memset(frame + spte->read_bytes, 0, spte->zero_bytes);
 
       /* pte update */
