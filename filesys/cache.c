@@ -226,12 +226,12 @@ buffer_cache_read(disk_sector_t sector_idx, uint8_t* buffer, off_t sector_ofs, i
     1. 새로운 thread 만듬
     2. disk[sector_idx + 1] -> buffer_cache 로 복사 (IO required) */
   lock_release(&cache_lock);
-  disk_sector_t* next_sector_ptr = malloc(sizeof(disk_sector_t));
-  if(next_sector_ptr == NULL)
-    return;
+  // disk_sector_t* next_sector_ptr = malloc(sizeof(disk_sector_t));
+  // if(next_sector_ptr == NULL)
+  //   return;
 
-  *next_sector_ptr = sector_idx + 1;
-  thread_create("read-ahead", PRI_DEFAULT, func_read_ahead, next_sector_ptr);
+  // *next_sector_ptr = sector_idx + 1;
+  // thread_create("read-ahead", PRI_DEFAULT, func_read_ahead, next_sector_ptr);
 }
 /*---------------------------------------------------------------------------------------*/
 

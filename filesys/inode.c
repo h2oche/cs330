@@ -309,9 +309,6 @@ inode_open (disk_sector_t sector)
     }
   }
 
-  // printf("inode stats\n");
-  // printf("inode->");
-  // printf("inode open end\n");
   lock_release(&open_lock);
 
   return inode;
@@ -430,8 +427,6 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
       /* Disk sector to read, starting byte offset within sector. */
       disk_sector_t sector_idx = byte_to_sector (inode, offset);
       if(sector_idx == -1) {
-        // printf("read at sector#%d\n", sector_idx);
-        // printf("length(%d), offset(%d), size(%d)\n", inode->data.length, offset, size);
         return bytes_read;
       }
       int sector_ofs = offset % DISK_SECTOR_SIZE;
