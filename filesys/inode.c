@@ -161,7 +161,7 @@ inode_create (disk_sector_t sector, off_t length, bool is_dir)
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
       disk_inode->is_dir = is_dir;
-      
+
       size_t i = 0;
 
       bool direct = false;
@@ -565,6 +565,12 @@ inode_extend(struct inode* inode, off_t new_file_length) {
         if(inode->data.double_indirect == 0) {
           if(!free_map_allocate(1, &inode->data.double_indirect)) return;
           disk_write(filesys_disk, inode->data.double_indirect, zeros);
+
+          if(!free_map_allocate(1, &inode->double_indirect[0])) return;
+          disk_write(filesys_disk, inode->double_indirect[0], zeros);
+
+          inode->double_indirect_data[0] = calloc(INDIRECT_ENTRY_CNT, sizeof(disk_sector_t));
+          inode->data.double_indirect_cnt = 1;
         }
 
         /* double indirect 의 child 가 다 찬 경우 새로운 child 생성 */
