@@ -26,12 +26,13 @@ free_map_init (void)
 bool
 free_map_allocate (size_t cnt, disk_sector_t *sectorp) 
 {
+  /* cnt == 1일 때만 정상동작 하게 */
+  ASSERT(cnt == 1);
   disk_sector_t sector = bitmap_scan_and_flip (free_map, 0, cnt, false);
   if (sector != BITMAP_ERROR
       && free_map_file != NULL
       && !bitmap_write (free_map, free_map_file))
     {
-      PANIC("dd");
       bitmap_set_multiple (free_map, sector, cnt, false); 
       sector = BITMAP_ERROR;
     }
@@ -45,6 +46,8 @@ void
 free_map_release (disk_sector_t sector, size_t cnt)
 {
   ASSERT (bitmap_all (free_map, sector, cnt));
+  /* cnt == 1일 때만 정상동작 하게 */
+  ASSERT (cnt == 1);
   bitmap_set_multiple (free_map, sector, cnt, false);
   bitmap_write (free_map, free_map_file);
 }
@@ -78,6 +81,7 @@ free_map_create (void)
 
   /* Write bitmap to file. */
   free_map_file = file_open (inode_open (FREE_MAP_SECTOR));
+
   if (free_map_file == NULL)
     PANIC ("can't open free map");
   if (!bitmap_write (free_map, free_map_file))
