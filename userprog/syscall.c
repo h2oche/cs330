@@ -192,7 +192,7 @@ static void syscall_create(struct intr_frame *f)
 
   unsigned initial_size = *(unsigned *)(f->esp+8);
 
-  f->eax = filesys_create(file, initial_size);
+  f->eax = filesys_create(file, initial_size, false);
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -600,6 +600,73 @@ static void syscall_munmap(struct intr_frame *f)
   }
   f->eax = 0;
 }
+
+
+/*---------------------------------------------------------------------------------------*/
+
+static void syscall_chdir(struct intr_frame *f){
+
+  if(!is_valid_ptr(f->esp+4, 4))
+    error_exit();
+
+  const char *dir = *(char **)(f->esp+4);
+
+}
+
+/*---------------------------------------------------------------------------------------*/
+
+static void syscall_mkdir(struct intr_frame *f){
+
+  if(!is_valid_ptr(f->esp+4, 4))
+    error_exit();
+
+  const char *dir = *(char **)(f->esp+4);
+
+}
+
+/*---------------------------------------------------------------------------------------*/
+
+static void syscall_readdir(struct intr_frame *f){
+
+  if(!is_valid_ptr(f->esp+4, 4) || !is_valid_ptr(f->esp+8, 4))
+    error_exit();
+    
+  int fd = *(int *)(f->esp+4);
+  char *name = *(char **)(f->esp+8);
+
+  if(get_fd_info(fd) == NULL)
+    error_exit();
+    
+}
+
+/*---------------------------------------------------------------------------------------*/
+
+static void syscall_isdir(struct intr_frame *f){
+
+  if(!is_valid_ptr(f->esp+4, 4))
+    error_exit();
+    
+  int fd = *(int *)(f->esp+4);
+
+  if(get_fd_info(fd) == NULL)
+    error_exit();
+  
+}
+
+/*---------------------------------------------------------------------------------------*/
+
+static void syscall_inumber(struct intr_frame *f){
+
+  if(!is_valid_ptr(f->esp+4, 4))
+    error_exit();
+    
+  int fd = *(int *)(f->esp+4);
+
+  if(get_fd_info(fd) == NULL)
+    error_exit();
+}
+
+/*---------------------------------------------------------------------------------------*/
 
 void
 syscall_init (void) 
