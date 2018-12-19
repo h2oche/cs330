@@ -126,7 +126,7 @@ inode_create_indirect(disk_sector_t indirect, size_t sectors)
 
   for(; i < sectors ; i += 1) {
     if(free_map_allocate(1, &sector_idx)) {
-      disk_write(filesys_disk, sector_idx, zeros);
+      buffer_cache_write(sector_idx, zeros, 0, DISK_SECTOR_SIZE);
       indirect_table[i] = sector_idx;
     } else return false;
   }
@@ -137,7 +137,7 @@ inode_create_indirect(disk_sector_t indirect, size_t sectors)
   //   printf("%d\n", indirect_table[i]);
   // }
 
-  disk_write(filesys_disk, indirect, indirect_table);
+  buffer_cache_write(indirect, indirect_table, 0, DISK_SECTOR_SIZE);
   free(indirect_table);
 
   return true;
@@ -182,7 +182,7 @@ inode_create (disk_sector_t sector, off_t length, bool is_dir)
         if( !direct ) {
           /* make direct node */
           if( free_map_allocate(1, &disk_inode->direct) ) {
-            disk_write(filesys_disk, disk_inode->direct, zeros);
+            buffer_cache_write(disk_inode->direct, zeros, 0, DISK_SECTOR_SIZE);
             direct = true;
             sectors--;
             // printf("direct(%d)\n", sectors);
@@ -223,7 +223,7 @@ inode_create (disk_sector_t sector, off_t length, bool is_dir)
           // printf("double_indirect(%d)\n", sectors);
 
           if(sectors == 0) {
-            disk_write(filesys_disk, disk_inode->double_indirect, double_indirect_table);
+            buffer_cache_write(disk_inode->double_indirect, double_indirect_table, 0, DISK_SECTOR_SIZE);
             disk_inode->double_indirect_cnt = i;
           }
         }
@@ -236,7 +236,7 @@ inode_create (disk_sector_t sector, off_t length, bool is_dir)
   // printf("success(%d)\n", success);
 
   if(success)
-    disk_write(filesys_disk, sector, disk_inode);
+    buffer_cache_write(sector, disk_inode, 0, DISK_SECTOR_SIZE);
   free(disk_inode);
 
 
@@ -282,14 +282,14 @@ inode_open (disk_sector_t sector)
   inode->removed = false;
   inode->dirty = false;
   lock_init(&inode->lock);
-  disk_read (filesys_disk, inode->sector, &inode->data);
+  buffer_cache_read (inode->sector, &inode->data, 0, DISK_SECTOR_SIZE);
 
   /* TODO read indirect */
   if((inode->indirect = calloc(INDIRECT_ENTRY_CNT, sizeof(disk_sector_t))) == NULL)
     return NULL;
   
   if(inode->data.indirect_cnt > 0) {
-    disk_read (filesys_disk, inode->data.indirect, inode->indirect);
+    buffer_cache_read (inode->data.indirect, inode->indirect, 0, DISK_SECTOR_SIZE);
   }
 
   /* TODO read double_indirect */
@@ -299,13 +299,13 @@ inode_open (disk_sector_t sector)
       return NULL;
 
   if(inode->data.double_indirect_cnt > 0) {    
-    disk_read (filesys_disk, inode->data.double_indirect, inode->double_indirect);
+    buffer_cache_read (inode->data.double_indirect, inode->double_indirect, 0, DISK_SECTOR_SIZE);
 
     size_t i = 0;
     for(; i < inode->data.double_indirect_cnt ; i += 1) {
       if((inode->double_indirect_data[i] = calloc(INDIRECT_ENTRY_CNT, sizeof(disk_sector_t))) == NULL)
         return NULL;
-      disk_read (filesys_disk, inode->double_indirect[i], inode->double_indirect_data[i]);
+      buffer_cache_read (inode->double_indirect[i], inode->double_indirect_data[i], 0, DISK_SECTOR_SIZE);
     }
   }
 
@@ -377,17 +377,17 @@ inode_close (struct inode *inode)
         //   printf("indirect sector#%d\n", inode->indirect[aa]);
 
         /* inode, direct 저장 */
-        disk_write(filesys_disk, inode->sector, &inode->data);
+        buffer_cache_write(inode->sector, &inode->data, 0, DISK_SECTOR_SIZE);
 
         /* indirect 저장 */
-        disk_write(filesys_disk, inode->data.indirect, inode->indirect);
+        buffer_cache_write(inode->data.indirect, inode->indirect, 0, DISK_SECTOR_SIZE);
 
         /* double_indirect 저장 */
-        disk_write(filesys_disk, inode->data.double_indirect, inode->double_indirect);
+        buffer_cache_write(inode->data.double_indirect, inode->double_indirect, 0, DISK_SECTOR_SIZE);
 
         size_t i = 0;
         for(; i < inode->data.double_indirect_cnt ; i += 1)
-          disk_write(filesys_disk, inode->double_indirect[i], inode->double_indirect_data[i]);
+          buffer_cache_write(inode->double_indirect[i], inode->double_indirect_data[i], 0, DISK_SECTOR_SIZE);
       }
 
 
@@ -517,7 +517,7 @@ inode_extend(struct inode* inode, off_t new_file_length) {
   /* direct 가 없으면 direct 부터 만들어줌 */
   if(inode->data.direct == 0) {
     if(!free_map_allocate(1, &inode->data.direct)) return;
-    disk_write(filesys_disk, inode->data.direct, zeros);
+    buffer_cache_write(inode->data.direct, zeros, 0, DISK_SECTOR_SIZE);
   }
 
   // printf("last sector : %d\n", last_sector);
@@ -546,14 +546,14 @@ inode_extend(struct inode* inode, off_t new_file_length) {
       /* 새로운 sector 할당 */
       disk_sector_t sector_idx = 0;
       if(!free_map_allocate(1, &sector_idx)) return;
-      disk_write(filesys_disk, sector_idx, zeros);
+      buffer_cache_write(sector_idx, zeros, 0, DISK_SECTOR_SIZE);
 
       /* indirect 채움 */
       if(inode->data.indirect_cnt < INDIRECT_ENTRY_CNT) {
         /* indirect 가 없을 경우 생성 */
         if(inode->data.indirect == 0) {
           if(!free_map_allocate(1, &inode->data.indirect)) return;
-          disk_write(filesys_disk, inode->data.indirect, zeros);
+          buffer_cache_write(inode->data.indirect, zeros, 0, DISK_SECTOR_SIZE);
         }
 
         // printf("sector idx : %d\n", sector_idx);
@@ -565,10 +565,10 @@ inode_extend(struct inode* inode, off_t new_file_length) {
         /* double indirect 가 없을 경우 생성 */
         if(inode->data.double_indirect == 0) {
           if(!free_map_allocate(1, &inode->data.double_indirect)) return;
-          disk_write(filesys_disk, inode->data.double_indirect, zeros);
+          buffer_cache_write(inode->data.double_indirect, zeros, 0, DISK_SECTOR_SIZE);
 
           if(!free_map_allocate(1, &inode->double_indirect[0])) return;
-          disk_write(filesys_disk, inode->double_indirect[0], zeros);
+          buffer_cache_write(inode->double_indirect[0], zeros, 0, DISK_SECTOR_SIZE);
 
           inode->double_indirect_data[0] = calloc(INDIRECT_ENTRY_CNT, sizeof(disk_sector_t));
           inode->data.double_indirect_cnt = 1;
@@ -580,7 +580,7 @@ inode_extend(struct inode* inode, off_t new_file_length) {
 
           disk_sector_t new_indirect_idx = 0;
           if(!free_map_allocate(1, &new_indirect_idx)) return;
-          disk_write(filesys_disk, new_indirect_idx, zeros);
+          buffer_cache_write(new_indirect_idx, zeros, 0, DISK_SECTOR_SIZE);
 
           inode->double_indirect[inode->data.double_indirect_cnt] = new_indirect_idx;
           inode->double_indirect_data[inode->data.double_indirect_cnt] = calloc(INDIRECT_ENTRY_CNT, sizeof(disk_sector_t));
