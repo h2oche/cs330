@@ -131,6 +131,12 @@ inode_create_indirect(disk_sector_t indirect, size_t sectors)
     } else return false;
   }
 
+  // printf("indirect#%d, \n", indirect);
+  // // printf("indirect#%d, sectors(%d)\n", indirect, sectors);
+  // for(i=0; i < sectors; i += 1) {
+  //   printf("%d\n", indirect_table[i]);
+  // }
+
   disk_write(filesys_disk, indirect, indirect_table);
   free(indirect_table);
 
@@ -423,11 +429,11 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
     {
       /* Disk sector to read, starting byte offset within sector. */
       disk_sector_t sector_idx = byte_to_sector (inode, offset);
-      if(sector_idx == -1)
-        return 0;
-      // printf("read at sector#%d\n", sector_idx);
-      // printf("length(%d), offset(%d), size(%d)\n", inode->data.length, offset, size);
-
+      if(sector_idx == -1) {
+        // printf("read at sector#%d\n", sector_idx);
+        // printf("length(%d), offset(%d), size(%d)\n", inode->data.length, offset, size);
+        return bytes_read;
+      }
       int sector_ofs = offset % DISK_SECTOR_SIZE;
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
