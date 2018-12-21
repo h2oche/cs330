@@ -55,6 +55,8 @@ struct inode
     int deny_write_cnt;                 /* 0: writes ok, >0: deny writes. */
     struct inode_disk data;             /* Inode content. */
 
+    off_t max_read_length;
+
     bool dirty;
     disk_sector_t* indirect;
     disk_sector_t* double_indirect;
@@ -74,19 +76,23 @@ static disk_sector_t
 byte_to_sector (const struct inode *inode, off_t pos) 
 {
   ASSERT (inode != NULL);
-
-  if( pos >= inode->data.length)
+  
+  // lock_acquire(&inode->lock);
+  if( pos >= inode->data.length) {
+    // lock_release(&inode->lock);
     return -1;
+  }
 
   int idx = pos / DISK_SECTOR_SIZE;
+  disk_sector_t ret;
 
   /* direct (idx == 0) */
   if( idx == 0 )
-    return inode->data.direct;
+    ret = inode->data.direct;
   /* indirect (idx == 1 ~ 128 ) */
   else if ( idx <= INDIRECT_ENTRY_CNT ) {
-    // printf("indirect data sector(%d)\n", inode->indirect[idx-1]);
-    return inode->indirect[idx - 1];
+    // printf("indirect data sector(%d:%d)\n", inode->indirect[idx-1], inode->sector);
+    ret = inode->indirect[idx - 1];
   }
   /* double indirect */
   else if ( idx <= INDIRECT_ENTRY_CNT * INDIRECT_ENTRY_CNT ) {
@@ -95,8 +101,24 @@ byte_to_sector (const struct inode *inode, off_t pos)
     // printf("idx, i, j : %d %d, %d\n", idx, i, j);
 
     // printf("double indirect data sector(%d)\n", inode->double_indirect_data[i][j]);
-    return inode->double_indirect_data[i][j];
+    ret = inode->double_indirect_data[i][j];
   }
+
+  if(ret == 0) {
+    printf("inode sector : %d(%d)\n", inode->sector, inode->data.length);
+    printf("inode indirect : %d(%d)\n", inode->data.indirect, inode->data.indirect_cnt);
+    printf("inode double_indirect : %d(%d)\n", inode->data.double_indirect, inode->data.double_indirect_cnt);
+
+
+    // size_t i = 0;
+    // for(i=0;i<inode->data.indirect);
+
+    PANIC("stop");
+  }
+
+  // lock_release(&inode->lock);
+
+  return ret;
 }
 
 /* List of open inodes, so that opening a single inode twice
@@ -107,7 +129,7 @@ static struct list open_inodes;
 void
 inode_init (void) 
 {
-  lock_init(&open_lock);
+  lock_init (&open_lock);
   list_init (&open_inodes);
 }
 
@@ -126,7 +148,7 @@ inode_create_indirect(disk_sector_t indirect, size_t sectors)
 
   for(; i < sectors ; i += 1) {
     if(free_map_allocate(1, &sector_idx)) {
-      buffer_cache_write(sector_idx, zeros, 0, DISK_SECTOR_SIZE);
+      buffer_cache_write (sector_idx, zeros, 0, DISK_SECTOR_SIZE);
       indirect_table[i] = sector_idx;
     } else return false;
   }
@@ -137,8 +159,8 @@ inode_create_indirect(disk_sector_t indirect, size_t sectors)
   //   printf("%d\n", indirect_table[i]);
   // }
 
-  buffer_cache_write(indirect, indirect_table, 0, DISK_SECTOR_SIZE);
-  free(indirect_table);
+  buffer_cache_write (indirect, indirect_table, 0, DISK_SECTOR_SIZE);
+  free (indirect_table);
 
   return true;
 }
@@ -264,6 +286,7 @@ inode_open (disk_sector_t sector)
       if (inode->sector == sector) 
         {
           inode_reopen (inode);
+          // printf("\n\nre-opened!!, cnt : %d\n\n", inode->open_cnt);
           lock_release(&open_lock);
           return inode; 
         }
@@ -283,6 +306,7 @@ inode_open (disk_sector_t sector)
   inode->dirty = false;
   lock_init(&inode->lock);
   buffer_cache_read (inode->sector, &inode->data, 0, DISK_SECTOR_SIZE);
+  inode->max_read_length = inode->data.length;
 
   /* TODO read indirect */
   if((inode->indirect = calloc(INDIRECT_ENTRY_CNT, sizeof(disk_sector_t))) == NULL)
@@ -422,10 +446,15 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
 
+  lock_acquire(&inode->lock);
+  size = offset + size > inode->max_read_length ? inode->max_read_length - offset : size;
+  lock_release(&inode->lock);
+
   while (size > 0) 
     {
       /* Disk sector to read, starting byte offset within sector. */
       disk_sector_t sector_idx = byte_to_sector (inode, offset);
+      // printf("read at sector#%d(%d)\n", sector_idx, inode->sector);
       if(sector_idx == -1) {
         return bytes_read;
       }
@@ -433,6 +462,7 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 
       /* Bytes left in inode, bytes left in sector, lesser of the two. */
       off_t inode_left = inode_length (inode) - offset;
+      // off_t inode_left = prev_length - offset;
       int sector_left = DISK_SECTOR_SIZE - sector_ofs;
       int min_left = inode_left < sector_left ? inode_left : sector_left;
 
@@ -443,6 +473,8 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
 
       /* TODO bounce buffer 대신 cache에서 읽음 */
       buffer_cache_read(sector_idx, buffer + bytes_read, sector_ofs, chunk_size);
+
+      // printf("read at sector completed#%d(%d)\n", sector_idx, inode->sector);
       
       /* Advance. */
       size -= chunk_size;
@@ -470,15 +502,23 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   /* TODO offset + size > file_length 인 경우 -> file extenstion 필요 */
   lock_acquire(&inode->lock);
-  if( offset + size > inode->data.length )
+  if( offset + size > inode->data.length ) {
+    // inode->is_growing = true;
+    // if(inode->read_cnt > 0)
+    //   cond_wait(&inode->read_cond, &inode->lock);
     inode_extend(inode, offset + size);
+  }
   lock_release(&inode->lock);
+
+
 
   while (size > 0) 
     { 
       /* Sector to write, starting byte offset within sector. */
       disk_sector_t sector_idx = byte_to_sector (inode, offset);
-      // printf("write at sector#%d\n", sector_idx);
+      // printf("write at sector#%d(%d)\n", sector_idx, inode->sector);
+      // if(sector_idx == 0)
+      //   printf("bad inode : %d\n", inode->sector);
 
       int sector_ofs = offset % DISK_SECTOR_SIZE;
 
@@ -495,11 +535,20 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       /* TODO bounce buffer 대신 cache에 씀 */
       buffer_cache_write(sector_idx, buffer + bytes_written, sector_ofs, chunk_size);
 
+      // printf("write at sector completed#%d(%d)\n", sector_idx, inode->sector);
+
       /* Advance. */
       size -= chunk_size;
       offset += chunk_size;
       bytes_written += chunk_size;
     }
+
+  lock_acquire(&inode->lock);
+  // if(inode->is_growing)
+  //   cond_broadcast(&inode->grow_cond, &inode->lock);
+  // inode->is_growing = false;
+  inode->max_read_length = inode->data.length;
+  lock_release(&inode->lock);
 
   return bytes_written;
 }
@@ -524,6 +573,8 @@ inode_extend(struct inode* inode, off_t new_file_length) {
 
   off_t bytes_to_add = new_file_length - inode->data.length;
   size_t capacity = DISK_SECTOR_SIZE - (inode->data.length % DISK_SECTOR_SIZE);
+  if(capacity == DISK_SECTOR_SIZE && inode->data.length > 0)
+    capacity = 0;
 
   // printf("new file length : %d\n", new_file_length);
   // printf("indirect_cn : %d\n", inode->data.indirect_cnt);
@@ -599,6 +650,7 @@ inode_extend(struct inode* inode, off_t new_file_length) {
   } 
 
   inode->data.length = new_file_length;
+  // printf("inode length changed!!(%d)\n", new_file_length);
 }
 
 /* Disables writes to INODE.
