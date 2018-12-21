@@ -152,9 +152,19 @@ dir_add (struct dir *dir, const char *name, disk_sector_t inode_sector)
   if (*name == '\0' || strlen (name) > NAME_MAX)
     return false;
 
+  struct inode *dir_inode = dir_get_inode(dir);
+  inode_lock_acquire(dir_inode);
+
   /* Check that NAME is not in use. */
   if (lookup (dir, name, NULL, NULL))
     goto done;
+
+  /* TODO parent 설정 */
+  disk_sector_t parent = inode_get_inumber(dir_inode);
+  struct inode *inode = inode_open(inode_sector);
+  if(inode == NULL) goto done;
+  inode_set_parent(inode, parent);
+  inode_close(inode);
 
   /* Set OFS to offset of free slot.
      If there are no free slots, then it will be set to the
@@ -175,6 +185,7 @@ dir_add (struct dir *dir, const char *name, disk_sector_t inode_sector)
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
 
  done:
+  inode_lock_release(dir_inode);
   return success;
 }
 
@@ -192,6 +203,9 @@ dir_remove (struct dir *dir, const char *name)
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
+  struct inode *dir_inode = dir_get_inode(dir);
+  inode_lock_acquire(dir_inode);
+
   /* Find directory entry. */
   if (!lookup (dir, name, &e, &ofs))
     goto done;
@@ -200,6 +214,22 @@ dir_remove (struct dir *dir, const char *name)
   inode = inode_open (e.inode_sector);
   if (inode == NULL)
     goto done;
+
+  /* 디렉토리인 경우
+     사용중인지 확인, 들어있는게 있는지 확인 */
+  if(inode_is_dir(inode)){
+    if(inode_get_open_cnt(inode) > 1)
+      goto done;
+
+    struct dir_entry e2;
+    off_t ofs2;
+    for (ofs2 = 0; 
+         inode_read_at (dir->inode, &e2, sizeof e2, ofs2) == sizeof e2;
+         ofs2 += sizeof e2){
+      if (e2.in_use)
+        goto done;
+    }
+  }
 
   /* Erase directory entry. */
   e.in_use = false;
@@ -212,6 +242,7 @@ dir_remove (struct dir *dir, const char *name)
 
  done:
   inode_close (inode);
+  inode_lock_release(dir_inode);
   return success;
 }
 
@@ -223,6 +254,9 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
   struct dir_entry e;
 
+  struct inode *dir_inode = dir_get_inode(dir);
+  inode_lock_acquire(dir_inode);
+
   while (inode_read_at (dir->inode, &e, sizeof e, dir->pos) == sizeof e) 
     {
       dir->pos += sizeof e;
@@ -232,5 +266,6 @@ dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
           return true;
         } 
     }
+  inode_lock_release(dir_inode);
   return false;
 }

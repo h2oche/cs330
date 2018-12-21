@@ -34,7 +34,8 @@ struct inode_disk
     unsigned magic;                     /* Magic number. */
     /* TODO add */
     bool is_dir;
-    uint32_t unused[120];               /* Not used. */
+    disk_sector_t parent;
+    uint32_t unused[119];               /* Not used. */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -66,6 +67,7 @@ struct inode
 
     /* TODO add */
     bool is_dir;
+    disk_sector_t parent;
   };
 
 /* Returns the disk sector that contains byte offset POS within
@@ -189,6 +191,7 @@ inode_create (disk_sector_t sector, off_t length, bool is_dir)
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
       disk_inode->is_dir = is_dir;
+      disk_inode->parent = ROOT_DIR_SECTOR;
 
       size_t i = 0;
 
@@ -308,6 +311,9 @@ inode_open (disk_sector_t sector)
   buffer_cache_read (inode->sector, &inode->data, 0, DISK_SECTOR_SIZE);
   inode->max_read_length = inode->data.length;
 
+  inode->is_dir = inode->data.is_dir;
+  inode->parent = inode->data.parent;
+
   /* TODO read indirect */
   if((inode->indirect = calloc(INDIRECT_ENTRY_CNT, sizeof(disk_sector_t))) == NULL)
     return NULL;
@@ -399,6 +405,9 @@ inode_close (struct inode *inode)
         // size_t aa = 0;
         // for(; aa < inode->data.indirect_cnt; aa += 1)
         //   printf("indirect sector#%d\n", inode->indirect[aa]);
+
+        (inode->data).is_dir = inode->is_dir;
+        (inode->data).parent = inode->parent;
 
         /* inode, direct 저장 */
         buffer_cache_write(inode->sector, &inode->data, 0, DISK_SECTOR_SIZE);
@@ -501,14 +510,14 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     return 0;
 
   /* TODO offset + size > file_length 인 경우 -> file extenstion 필요 */
-  lock_acquire(&inode->lock);
-  if( offset + size > inode->data.length ) {
-    // inode->is_growing = true;
-    // if(inode->read_cnt > 0)
-    //   cond_wait(&inode->read_cond, &inode->lock);
+  if(!inode->is_dir)
+    lock_acquire(&inode->lock);
+
+  if( offset + size > inode->data.length )
     inode_extend(inode, offset + size);
-  }
-  lock_release(&inode->lock);
+
+  if(!inode->is_dir)
+    lock_release(&inode->lock);
 
 
 
@@ -678,4 +687,30 @@ off_t
 inode_length (const struct inode *inode)
 {
   return inode->data.length;
+}
+
+bool inode_is_dir(struct inode *inode)
+{
+  return inode->is_dir;
+}
+
+disk_sector_t inode_get_parent(struct inode *inode){
+  return inode->parent;
+}
+
+void inode_lock_acquire(struct inode* inode){
+  lock_acquire(&inode->lock);
+}
+
+void inode_lock_release(struct inode* inode){
+  lock_release(&inode->lock);
+}
+
+void inode_set_parent(struct inode* inode, disk_sector_t parent)
+{
+  inode->parent = parent;
+}
+
+int inode_get_open_cnt(struct inode* inode){
+  return inode->open_cnt;
 }

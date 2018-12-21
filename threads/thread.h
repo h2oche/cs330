@@ -124,6 +124,8 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+
+    struct dir *dir;
   };
 
 struct fd_info
