@@ -238,7 +238,13 @@ static void syscall_open(struct intr_frame *f)
   struct file* open_file = filesys_open(file);
 
   /* process가 열 수 있는 파일 개수 제한 - FAQ */
-  if(open_file == NULL || thread_current()->next_fd > 130){
+  // if(open_file == NULL || thread_current()->next_fd > 130){
+  //   f->eax = fd;
+  //   printf("D1(%d)", thread_current()->next_fd);
+  //   return;
+  // }
+
+  if(open_file == NULL){
     f->eax = fd;
     return;
   }

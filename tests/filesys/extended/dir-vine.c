@@ -29,6 +29,8 @@ test_main (void)
       char contents[128];
       int fd;
 
+      // printf("A");
+
       /* Create file. */
       snprintf (file_name, sizeof file_name, "file%d", i);
       if (!create (file_name, 0))
@@ -42,6 +44,8 @@ test_main (void)
           break;
         }
       close (fd);
+
+      // printf("B");
       
       /* Create directory. */
       snprintf (dir_name, sizeof dir_name, "dir%d", i);
@@ -50,6 +54,8 @@ test_main (void)
           CHECK (remove (file_name), "remove \"%s\"", file_name);
           break; 
         }
+
+      // printf("C");
 
       /* Check for file and directory. */
       CHECK ((fd = open (".")) > 1, "open \".\"");
@@ -63,10 +69,15 @@ test_main (void)
              file_name, dir_name, name[0], name[1]);
       close (fd);
 
+      // printf("D");
+
       /* Descend into directory. */
       CHECK (chdir (dir_name), "chdir \"%s\"", dir_name);
+
+      // printf("E");
     }
   CHECK (i > 200, "created files and directories only to level %d", i);
+  // printf("level : %d\n", i);
   quiet = false;
 
   msg ("removing all but top 10 levels of files and directories...");
@@ -74,12 +85,29 @@ test_main (void)
   while (i-- > 10) 
     {
       char file_name[16], dir_name[16];
+      printf("level : %d\n", i);
+
+      // char name[3][READDIR_MAX_LEN + 1];
+      // // char file_name[16], dir_name[16];
+      // char contents[128];
+      // int fd;
 
       snprintf (file_name, sizeof file_name, "file%d", i);
       snprintf (dir_name, sizeof dir_name, "dir%d", i);
       CHECK (chdir (".."), "chdir \"..\"");
+
+      // CHECK ((fd = open (".")) > 1, "open \".\"");
+      // CHECK (readdir (fd, name[0]), "readdir \".\"");
+      // CHECK (readdir (fd, name[1]), "readdir \".\"");
+
+      // printf("file : %s\n", name[0]);
+      // printf("dir : %s\n", name[1]);
+
+      printf("A");
       CHECK (remove (dir_name), "remove \"%s\"", dir_name);
+      printf("B");
       CHECK (remove (file_name), "remove \"%s\"", file_name);
+      printf("C");
     }
   quiet = false;
 }

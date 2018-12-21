@@ -6,7 +6,9 @@
 #include "filesys/filesys.h"
 #include "filesys/free-map.h"
 #include "threads/malloc.h"
+#include "threads/thread.h"
 #include "filesys/cache.h"
+#include "filesys/directory.h"
 #include "threads/synch.h"
 
 /* Identifies an inode. */
@@ -192,7 +194,10 @@ inode_create (disk_sector_t sector, off_t length, bool is_dir)
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
       disk_inode->is_dir = is_dir;
-      disk_inode->parent = ROOT_DIR_SECTOR;
+      if(thread_current()->dir)
+        disk_inode->parent = inode_get_inumber(dir_get_inode(thread_current()->dir));
+      else
+        disk_inode->parent = ROOT_DIR_SECTOR;
 
       size_t i = 0;
 
@@ -390,7 +395,7 @@ inode_close (struct inode *inode)
           /* delete indirect */
           for(i = 0 ; i < inode->data.indirect_cnt; i += 1)
             free_map_release (inode->indirect[i], 1);
- //         if(inode->data.indirect != 0)
+          if(inode->data.indirect != 0)
             free_map_release (inode->data.indirect, 1);
 
           /* delete double_indirect */
@@ -399,7 +404,7 @@ inode_close (struct inode *inode)
               free_map_release (inode->double_indirect_data[i][j], 1);
             free_map_release(inode->double_indirect[i], 1);
           }
- //         if(inode->data.double_indirect != 0)
+          if(inode->data.double_indirect != 0)
             free_map_release (inode->data.double_indirect, 1);
         }
       /* TODO inode 에 변경사항이 있을 경우, 변경사항 저장 */

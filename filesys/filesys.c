@@ -148,7 +148,10 @@ filesys_remove (const char *name)
 {
   char *file_name = get_filename(name);
   struct dir *dir = get_dir(name);
-  bool success = dir != NULL && dir_remove (dir, file_name);
+
+  int result = dir_remove (dir, file_name);
+
+  bool success = dir != NULL && result;
   dir_close (dir);
  
   free(file_name);
@@ -254,7 +257,9 @@ filesys_chdir(const char* path)
     return true;
   }
   else if(strcmp(file_name, "..") == 0){
+    // printf("cwd : %d\n", inode_get_inumber(dir_get_inode(dir)));
     inode = get_parent_inode(dir);
+    // printf("after cwd : %d\n", inode_get_inumber(inode));
   }
   else if(inode_get_inumber(dir_get_inode(dir)) == ROOT_DIR_SECTOR
           && strlen(file_name) == 0){
@@ -274,6 +279,7 @@ filesys_chdir(const char* path)
 
   dir_close(thread_current()->dir);
   thread_current()->dir = dir;
+
   free(file_name);
   return true;
 }
