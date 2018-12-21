@@ -64,6 +64,7 @@ struct inode
     disk_sector_t** double_indirect_data;
 
     struct lock lock;
+    struct lock extend_lock;
 
     /* TODO add */
     bool is_dir;
@@ -308,6 +309,7 @@ inode_open (disk_sector_t sector)
   inode->removed = false;
   inode->dirty = false;
   lock_init(&inode->lock);
+  lock_init(&inode->extend_lock);
   buffer_cache_read (inode->sector, &inode->data, 0, DISK_SECTOR_SIZE);
   inode->max_read_length = inode->data.length;
 
@@ -511,12 +513,17 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   if (inode->deny_write_cnt)
     return 0;
 
+  bool need_release = false;
+
   /* TODO offset + size > file_length 인 경우 -> file extenstion 필요 */
   if(!inode->is_dir)
     lock_acquire(&inode->lock);
 
-  if( offset + size > inode->data.length )
+  if( offset + size > inode->data.length ) {
+    need_release = true;
+    lock_acquire(&inode->extend_lock);
     inode_extend(inode, offset + size);
+  }
 
   if(!inode->is_dir)
     lock_release(&inode->lock);
@@ -556,7 +563,11 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   if(!inode->is_dir)
     lock_acquire(&inode->lock);
+
+  if(need_release)
+    lock_release(&inode->extend_lock);
   inode->max_read_length = inode->data.length;
+
   if(!inode->is_dir)
     lock_release(&inode->lock);
 
