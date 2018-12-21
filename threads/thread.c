@@ -14,6 +14,7 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
+#include "filesys/directory.h"
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -200,6 +201,10 @@ thread_create (const char *name, int priority,
   /* Stack frame for switch_threads(). */
   sf = alloc_frame (t, sizeof *sf);
   sf->eip = switch_entry;
+
+  /* TODO 부모 current 디렉토리로 설정 */
+  if(thread_current()->dir)
+    t->dir = dir_reopen(thread_current()->dir);
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -455,6 +460,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->next_mapid = 1;
   t->exit_status = -1;
   t->exe_file = NULL;
+  t->dir = NULL;
 
   sema_init(&t->load_lock, 0);
 }

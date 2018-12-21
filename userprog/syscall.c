@@ -18,6 +18,9 @@
 #include "userprog/pagedir.h"
 #include <round.h>
 
+#include "filesys/inode.h"
+#include "filesys/directory.h"
+
 //struct semaphore filesys_sema;
 static void syscall_handler (struct intr_frame *);
 void munmap(int);
@@ -190,6 +193,11 @@ static void syscall_create(struct intr_frame *f)
   if(!is_valid_string(file))
     return error_exit();
 
+  if(strlen(file) == 0){
+    f->eax = false;
+    return;
+  }
+
   unsigned initial_size = *(unsigned *)(f->esp+8);
 
   f->eax = filesys_create(file, initial_size, false);
@@ -221,6 +229,11 @@ static void syscall_open(struct intr_frame *f)
     return error_exit();
 
   int fd = -1;
+
+  if(strlen(file)==0){
+    f->eax = -1;
+    return;
+  }
 
   struct file* open_file = filesys_open(file);
 
@@ -261,6 +274,11 @@ static void syscall_filesize(struct intr_frame *f)
     return error_exit();
   }
 
+  /* TODO 디렉토리인 경우 에러 */
+  if(inode_is_dir(file_get_inode(file))){
+    f->eax = -1;
+    return;
+  }
 
   len = file_length(file);
   f->eax = len;
@@ -304,6 +322,13 @@ static void syscall_read(struct intr_frame *f)
     if(file == NULL){
       return error_exit();
     }
+
+    /* TODO 디렉토리인 경우 에러 */
+    if(inode_is_dir(file_get_inode(file))){
+      f->eax = -1;
+      return;
+    }
+
     read_size = file_read(file, buffer, size);
   }
 
@@ -341,6 +366,13 @@ static void syscall_write(struct intr_frame *f)
     if(file == NULL){
       return error_exit();
     }
+
+    /* TODO 디렉토리인 경우 에러 */
+    if(inode_is_dir(file_get_inode(file))){
+      f->eax = -1;
+      return;
+    }
+
     write_size = file_write(file, buffer, size);
   }
 
@@ -364,6 +396,12 @@ static void syscall_seek(struct intr_frame *f)
   if(file == NULL){
     return error_exit();
   }
+
+  /* TODO 디렉토리인 경우 에러 */
+  if(inode_is_dir(file_get_inode(file))){
+    return error_exit();
+  }
+
   file_seek(file, position);
 }
 
@@ -383,6 +421,12 @@ static void syscall_tell(struct intr_frame *f)
   if(file == NULL){
     return error_exit();
   }
+
+  /* TODO 디렉토리인 경우 에러 */
+  if(inode_is_dir(file_get_inode(file))){
+    return error_exit();
+  }
+
   f->eax = file_tell(file);
 }
 
@@ -407,7 +451,16 @@ static void syscall_close(struct intr_frame *f)
   if(file == NULL)
     return error_exit();
   
-  file_close(file);
+  /* TODO 디렉토리와 파일 구분 */
+  struct inode *inode = file_get_inode(file);
+  if(inode == NULL)
+    return error_exit();
+
+  if(inode_is_dir(inode))
+    dir_close((struct dir *)file);
+  else
+    file_close(file);
+
   fd_info->file = NULL;
 }
 
@@ -611,6 +664,8 @@ static void syscall_chdir(struct intr_frame *f){
 
   const char *dir = *(char **)(f->esp+4);
 
+  f->eax = filesys_chdir(dir);
+
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -621,6 +676,13 @@ static void syscall_mkdir(struct intr_frame *f){
     error_exit();
 
   const char *dir = *(char **)(f->esp+4);
+
+  if(strlen(dir)==0){
+    f->eax = false;
+    return;
+  }
+
+  f->eax = filesys_create(dir, 0, true);
 
 }
 
@@ -633,10 +695,21 @@ static void syscall_readdir(struct intr_frame *f){
     
   int fd = *(int *)(f->esp+4);
   char *name = *(char **)(f->esp+8);
+  bool success = false;
+  struct fd_info *fd_info = get_fd_info(fd);
 
-  if(get_fd_info(fd) == NULL)
+  if(fd_info == NULL)
     error_exit();
-    
+
+  /* TODO 디렉토리여야함 */
+  struct inode *inode = file_get_inode(fd_info->file);
+  if(inode != NULL && inode_is_dir(inode)){
+    if(dir_readdir((struct dir *)(fd_info->file), name))
+      success = true;
+  }
+
+  f->eax = success;
+
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -647,9 +720,17 @@ static void syscall_isdir(struct intr_frame *f){
     error_exit();
     
   int fd = *(int *)(f->esp+4);
+  struct fd_info *fd_info = get_fd_info(fd);
 
-  if(get_fd_info(fd) == NULL)
+  if(fd_info == NULL)
     error_exit();
+
+  bool result = false;
+  struct inode *inode = file_get_inode(fd_info->file);
+  if(inode != NULL && inode_is_dir(inode))
+    result = true;
+
+  f->eax = result;
   
 }
 
@@ -661,9 +742,18 @@ static void syscall_inumber(struct intr_frame *f){
     error_exit();
     
   int fd = *(int *)(f->esp+4);
+  struct fd_info *fd_info = get_fd_info(fd);
 
-  if(get_fd_info(fd) == NULL)
+  if(fd_info == NULL)
     error_exit();
+
+  struct inode* inode = file_get_inode(fd_info->file);
+  disk_sector_t inumber = -1;
+  if(inode != NULL)
+    inumber = inode_get_inumber(inode);
+
+  f->eax = inumber;
+
 }
 
 /*---------------------------------------------------------------------------------------*/
@@ -730,6 +820,21 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
     case SYS_MUNMAP:
       syscall_munmap(f);
+      break;
+    case SYS_CHDIR:
+      syscall_chdir(f);
+      break;
+    case SYS_MKDIR:
+      syscall_mkdir(f);
+      break;
+    case SYS_READDIR:
+      syscall_readdir(f);
+      break;
+    case SYS_ISDIR:
+      syscall_isdir(f);
+      break;
+    case SYS_INUMBER:
+      syscall_inumber(f);
       break;
     default:
       return error_exit();

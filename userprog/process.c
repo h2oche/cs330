@@ -26,6 +26,8 @@
 #include "vm/frametbl.h" 
 #include "vm/spagetbl.h"
 
+#include "filesys/inode.h"
+
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
@@ -118,6 +120,7 @@ destroy_fd_infos(struct thread* t)
   struct fd_info *f = NULL;
   struct list_elem *le = NULL;
   struct list_elem *nle = NULL;
+  struct inode *inode = NULL;
 
   for(le = list_begin(&t->fd_infos);
       le != list_end(&t->fd_infos);
@@ -128,13 +131,21 @@ destroy_fd_infos(struct thread* t)
 
     /* 열러 있는 파일 닫기 */
     if(f->file != NULL){
-      file_close(f->file);
+      inode = file_get_inode(f->file);
+      /* TODO 디랙토리랑 파일 구분해서 닫기 */
+      if(inode_is_dir(inode))
+        dir_close((struct dir *)(f->file));
+      else
+        file_close(f->file);
     }
-
     /* 리스트에서 없애고 free */
     list_remove(&f->elem);
     free(f);
   }
+
+  /* TODO 현재 디렉토리도 닫기 */
+  if(thread_current()->dir)
+    dir_close(thread_current()->dir);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -285,6 +296,12 @@ start_process (void *f_name)
   if (!success){
     thread_exit ();
   }
+
+
+  /* TODO current 디렉토리 설정 안 되었으면 root로 설정 */
+  if(thread_current()->dir == NULL)
+    thread_current()->dir = dir_open_root();
+
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
