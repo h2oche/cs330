@@ -48,6 +48,7 @@ free_map_release (disk_sector_t sector, size_t cnt)
   ASSERT (bitmap_all (free_map, sector, cnt));
   /* cnt == 1일 때만 정상동작 하게 */
   ASSERT (cnt == 1);
+
   bitmap_set_multiple (free_map, sector, cnt, false);
   bitmap_write (free_map, free_map_file);
 }
