@@ -455,9 +455,11 @@ inode_read_at (struct inode *inode, void *buffer_, off_t size, off_t offset)
   uint8_t *buffer = buffer_;
   off_t bytes_read = 0;
 
-  lock_acquire(&inode->lock);
+  if(!inode->is_dir)
+    lock_acquire(&inode->lock);
   size = offset + size > inode->max_read_length ? inode->max_read_length - offset : size;
-  lock_release(&inode->lock);
+  if(!inode->is_dir)
+    lock_release(&inode->lock);
 
   while (size > 0) 
     {
@@ -552,12 +554,11 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
       bytes_written += chunk_size;
     }
 
-  lock_acquire(&inode->lock);
-  // if(inode->is_growing)
-  //   cond_broadcast(&inode->grow_cond, &inode->lock);
-  // inode->is_growing = false;
+  if(!inode->is_dir)
+    lock_acquire(&inode->lock);
   inode->max_read_length = inode->data.length;
-  lock_release(&inode->lock);
+  if(!inode->is_dir)
+    lock_release(&inode->lock);
 
   return bytes_written;
 }
