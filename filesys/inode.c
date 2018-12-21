@@ -390,7 +390,8 @@ inode_close (struct inode *inode)
           /* delete indirect */
           for(i = 0 ; i < inode->data.indirect_cnt; i += 1)
             free_map_release (inode->indirect[i], 1);
-          free_map_release (inode->data.indirect, 1);
+ //         if(inode->data.indirect != 0)
+            free_map_release (inode->data.indirect, 1);
 
           /* delete double_indirect */
           for(i = 0 ; i < inode->data.double_indirect_cnt; i += 1) {
@@ -398,7 +399,8 @@ inode_close (struct inode *inode)
               free_map_release (inode->double_indirect_data[i][j], 1);
             free_map_release(inode->double_indirect[i], 1);
           }
-          free_map_release (inode->data.double_indirect, 1);
+ //         if(inode->data.double_indirect != 0)
+            free_map_release (inode->data.double_indirect, 1);
         }
       /* TODO inode 에 변경사항이 있을 경우, 변경사항 저장 */
       if(inode -> dirty) {
