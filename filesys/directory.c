@@ -207,8 +207,9 @@ dir_remove (struct dir *dir, const char *name)
   inode_lock_acquire(dir_inode);
 
   /* Find directory entry. */
-  if (!lookup (dir, name, &e, &ofs))
+  if (!lookup (dir, name, &e, &ofs)){
     goto done;
+  }
 
   /* Open inode. */
   inode = inode_open (e.inode_sector);
@@ -220,14 +221,14 @@ dir_remove (struct dir *dir, const char *name)
   if(inode_is_dir(inode)){
     if(inode_get_open_cnt(inode) > 1)
       goto done;
-
     struct dir_entry e2;
     off_t ofs2;
     for (ofs2 = 0; 
-         inode_read_at (dir->inode, &e2, sizeof e2, ofs2) == sizeof e2;
+         inode_read_at (inode, &e2, sizeof e2, ofs2) == sizeof e2;
          ofs2 += sizeof e2){
-      if (e2.in_use)
+      if (e2.in_use){
         goto done;
+      }
     }
   }
 
@@ -235,7 +236,7 @@ dir_remove (struct dir *dir, const char *name)
   e.in_use = false;
   if (inode_write_at (dir->inode, &e, sizeof e, ofs) != sizeof e) 
     goto done;
-
+//PANIC("ASDF");
   /* Remove inode. */
   inode_remove (inode);
   success = true;
