@@ -390,7 +390,8 @@ inode_close (struct inode *inode)
 
           /* delete inode, direct */
           free_map_release (inode->sector, 1);
-          free_map_release (inode->data.direct, 1);
+          if(inode->data.direct != 0)
+            free_map_release (inode->data.direct, 1);
 
           /* delete indirect */
           for(i = 0 ; i < inode->data.indirect_cnt; i += 1)
@@ -408,7 +409,7 @@ inode_close (struct inode *inode)
             free_map_release (inode->data.double_indirect, 1);
         }
       /* TODO inode 에 변경사항이 있을 경우, 변경사항 저장 */
-      if(inode -> dirty) {
+      if(inode -> dirty || inode->is_dir) {
         // printf("change dirty!\n");
         // printf("indirect cnt : %d\n", inode->data.indirect);
         // size_t aa = 0;
@@ -422,11 +423,13 @@ inode_close (struct inode *inode)
         buffer_cache_write(inode->sector, &inode->data, 0, DISK_SECTOR_SIZE);
 
         /* indirect 저장 */
-        buffer_cache_write(inode->data.indirect, inode->indirect, 0, DISK_SECTOR_SIZE);
+        if(inode->data.indirect != 0)
+          buffer_cache_write(inode->data.indirect, inode->indirect, 0, DISK_SECTOR_SIZE);
 
         /* double_indirect 저장 */
-        buffer_cache_write(inode->data.double_indirect, inode->double_indirect, 0, DISK_SECTOR_SIZE);
-
+        if(inode->data.double_indirect != 0)
+          buffer_cache_write(inode->data.double_indirect, inode->double_indirect, 0, DISK_SECTOR_SIZE);
+  
         size_t i = 0;
         for(; i < inode->data.double_indirect_cnt ; i += 1)
           buffer_cache_write(inode->double_indirect[i], inode->double_indirect_data[i], 0, DISK_SECTOR_SIZE);
