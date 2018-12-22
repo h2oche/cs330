@@ -85,7 +85,7 @@ test_main (void)
   while (i-- > 10) 
     {
       char file_name[16], dir_name[16];
-      printf("level : %d\n", i);
+      // printf("level : %d\n", i);
 
       // char name[3][READDIR_MAX_LEN + 1];
       // // char file_name[16], dir_name[16];
@@ -103,11 +103,11 @@ test_main (void)
       // printf("file : %s\n", name[0]);
       // printf("dir : %s\n", name[1]);
 
-      printf("A");
+      // printf("A");
       CHECK (remove (dir_name), "remove \"%s\"", dir_name);
-      printf("B");
+      // printf("B");
       CHECK (remove (file_name), "remove \"%s\"", file_name);
-      printf("C");
+      // printf("C");
     }
   quiet = false;
 }

@@ -409,7 +409,7 @@ inode_close (struct inode *inode)
             free_map_release (inode->data.double_indirect, 1);
         }
       /* TODO inode 에 변경사항이 있을 경우, 변경사항 저장 */
-      if(inode -> dirty || inode->is_dir) {
+      if(inode -> dirty) {
         // printf("change dirty!\n");
         // printf("indirect cnt : %d\n", inode->data.indirect);
         // size_t aa = 0;

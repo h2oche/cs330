@@ -252,6 +252,9 @@ filesys_chdir(const char* path)
   }
 
   if(strcmp(file_name, ".") == 0){
+    if(thread_current()->dir)
+      dir_close(thread_current()->dir);
+
     thread_current()->dir = dir;
     free(file_name);
     return true;
@@ -263,6 +266,9 @@ filesys_chdir(const char* path)
   }
   else if(inode_get_inumber(dir_get_inode(dir)) == ROOT_DIR_SECTOR
           && strlen(file_name) == 0){
+    if(thread_current()->dir)
+      dir_close(thread_current()->dir);
+
     thread_current()->dir = dir;
     free(file_name);
     return true;
@@ -276,8 +282,8 @@ filesys_chdir(const char* path)
     free(file_name);
     return false;
   }
-
-  dir_close(thread_current()->dir);
+  if(thread_current()->dir)
+    dir_close(thread_current()->dir);
   thread_current()->dir = dir;
 
   free(file_name);

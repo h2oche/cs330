@@ -5,6 +5,7 @@
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/malloc.h"
+#include "threads/thread.h"
 
 /* A directory. */
 struct dir 
@@ -224,8 +225,14 @@ dir_remove (struct dir *dir, const char *name)
   /* 디렉토리인 경우
      사용중인지 확인, 들어있는게 있는지 확인 */
   if(inode_is_dir(inode)){
+    // disk_sector_t cur_inumber = -1;
+    // if(thread_current()->dir)
+    //   cur_inumber = inode_get_inumber(thread_current()->dir->inode);
+    // if(cur_inumber == inode_get_inumber(inode))
+    //   goto done;
     if(inode_get_open_cnt(inode) > 1)
       goto done;
+    // if(inode_get_inumber(inode) == inode_get_)
     struct dir_entry e2;
     off_t ofs2;
     for (ofs2 = 0; 

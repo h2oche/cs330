@@ -45,7 +45,7 @@ free_map_allocate (size_t cnt, disk_sector_t *sectorp)
 void
 free_map_release (disk_sector_t sector, size_t cnt)
 {
-  ASSERT (bitmap_all (free_map, sector, cnt));
+  // ASSERT (bitmap_all (free_map, sector, cnt));
   /* cnt == 1일 때만 정상동작 하게 */
   ASSERT (cnt == 1);
 
