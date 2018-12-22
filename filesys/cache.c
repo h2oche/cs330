@@ -44,7 +44,7 @@ buffer_cache_init(void) {
   }
 
   /* TODO 주기적으로 write-back하는 thread 생성 */
-  // thread_create("write-behind", PRI_DEFAULT, func_write_behind, NULL);
+  thread_create("write-behind", PRI_DEFAULT, func_write_behind, NULL);
 
   printf("buffer cache init...\n");
 }
